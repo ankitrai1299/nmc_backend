@@ -4,7 +4,7 @@ import { performAudit, performMultimodalAudit } from './auditService.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ytdl from '@distube/ytdl-core';
+import { YoutubeTranscript } from 'youtube-transcript';
 import { analyzeWithGemini } from '../geminiService.js';
 import AuditRecord from '../models/AuditRecord.js';
 import { extractTextFromImage } from './ocrService.js';
@@ -12,6 +12,20 @@ import { extractTextFromImage } from './ocrService.js';
 const MAX_TEXT_LENGTH = 100000;
 const MAX_MEDIA_SIZE = 100 * 1024 * 1024;
 const REQUEST_TIMEOUT = 60000;
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15'
+];
+
+const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+
+const delay = (minMs = 300, maxMs = 900) => {
+  const jitter = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+  return new Promise((resolve) => setTimeout(resolve, jitter));
+};
 
 const validateInputSize = (input, type) => {
   if (type === 'text' && typeof input === 'string' && input.length > MAX_TEXT_LENGTH) {
@@ -60,10 +74,11 @@ const downloadMediaFile = async (url) => {
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
   try {
+    await delay();
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': getRandomUserAgent()
       }
     });
 
@@ -91,43 +106,53 @@ const downloadMediaFile = async (url) => {
   }
 };
 
-const streamToBuffer = (stream) => {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    stream.on('data', (chunk) => chunks.push(chunk));
-    stream.on('end', () => resolve(Buffer.concat(chunks)));
-    stream.on('error', (error) => reject(error));
-  });
+const extractYouTubeVideoId = (url) => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('youtu.be')) {
+      return parsed.pathname.replace('/', '').trim() || null;
+    }
+    if (parsed.searchParams.has('v')) {
+      return parsed.searchParams.get('v');
+    }
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    const shortsIndex = pathParts.indexOf('shorts');
+    if (shortsIndex !== -1 && pathParts[shortsIndex + 1]) {
+      return pathParts[shortsIndex + 1];
+    }
+    const embedIndex = pathParts.indexOf('embed');
+    if (embedIndex !== -1 && pathParts[embedIndex + 1]) {
+      return pathParts[embedIndex + 1];
+    }
+    return null;
+  } catch {
+    return null;
+  }
 };
 
-const downloadYouTubeAudio = async (url) => {
-  if (!ytdl.validateURL(url)) {
+const fetchYouTubeTranscript = async (url) => {
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) {
+    console.warn('[YouTube Transcript] Invalid URL, unable to extract video ID');
     throw new Error('Invalid YouTube URL format. Please provide a valid YouTube video link.');
   }
 
-  const info = await ytdl.getInfo(url);
-  if (info.videoDetails.isLiveContent) {
-    throw new Error('Live YouTube videos cannot be processed. Please use a completed video.');
+  try {
+    await delay(400, 1200);
+    const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+    const transcript = transcriptItems.map((item) => item.text).join(' ').replace(/\s+/g, ' ').trim();
+
+    if (!transcript) {
+      console.warn('[YouTube Transcript] Empty transcript received');
+      throw new Error('Transcript unavailable');
+    }
+
+    console.log(`[YouTube Transcript] Success | Video: ${videoId} | Length: ${transcript.length} chars`);
+    return transcript;
+  } catch (error) {
+    console.error(`[YouTube Transcript] Failure | Video: ${videoId} | Error: ${error.message}`);
+    throw new Error(`YouTube transcript unavailable: ${error.message}`);
   }
-
-  const format = ytdl.chooseFormat(info.formats, {
-    filter: 'audioonly',
-    quality: 'highestaudio'
-  });
-
-  if (!format) {
-    throw new Error('No suitable audio format found for this YouTube video.');
-  }
-
-  const audioStream = ytdl(url, {
-    filter: 'audioonly',
-    quality: 'highestaudio'
-  });
-
-  const buffer = await streamToBuffer(audioStream);
-  const mimetype = format.mimeType?.split(';')[0] || 'audio/webm';
-
-  return { buffer, mimetype };
 };
 
 const validateGeminiResult = (result) => {
@@ -247,15 +272,21 @@ const processUrl = async ({ url, category, analysisMode }) => {
   const urlType = detectUrlContentType(url);
 
   if (isYouTubeUrl(url)) {
-    const { buffer, mimetype } = await downloadYouTubeAudio(url);
-    return processMediaBuffer({
-      buffer,
-      mimetype,
+    const transcriptText = await fetchYouTubeTranscript(url);
+    const auditResult = await analyzeWithGemini({
+      content: transcriptText,
       inputType: 'video',
-      originalInput: url,
       category,
       analysisMode
     });
+
+    return {
+      contentType: 'video',
+      originalInput: url,
+      extractedText: transcriptText,
+      transcript: transcriptText,
+      auditResult
+    };
   }
 
   if (urlType === 'video' || urlType === 'audio') {
