@@ -30,6 +30,8 @@ const delay = (minMs = 400, maxMs = 1200) => {
   return new Promise((resolve) => setTimeout(resolve, jitter));
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
 /**
@@ -73,6 +75,69 @@ const extractMetadataText = (metadata) => {
   if (metadata?.ogTitle) parts.push(`OG Title: ${metadata.ogTitle}`);
   if (metadata?.ogDescription) parts.push(`OG Description: ${metadata.ogDescription}`);
   return sanitizeContent(parts.join(' '));
+};
+
+const fetchHtml = async (url) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+  try {
+    await delay();
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': getRandomUserAgent(),
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return await response.text();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+export const extractReadableFromUrl = async (url) => {
+  try {
+    const html = await fetchHtml(url);
+    const readableText = extractReadableText(html);
+    if (!readableText.trim()) {
+      throw new Error('Readability returned empty content');
+    }
+    console.log('[Scraping] Readability URL extraction succeeded.');
+    return readableText;
+  } catch (error) {
+    console.warn('[Scraping] Readability URL extraction failed:', error.message);
+    return '';
+  }
+};
+
+export const extractMetadataFromUrl = async (url) => {
+  try {
+    const html = await fetchHtml(url);
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+    const metadata = {
+      title: document.title || '',
+      description: document.querySelector('meta[name="description"]')?.getAttribute('content') || '',
+      ogTitle: document.querySelector('meta[property="og:title"]')?.getAttribute('content') || '',
+      ogDescription: document.querySelector('meta[property="og:description"]')?.getAttribute('content') || ''
+    };
+    const metadataText = extractMetadataText(metadata);
+    if (!metadataText.trim()) {
+      throw new Error('Metadata extraction returned empty content');
+    }
+    console.log('[Scraping] Metadata URL extraction succeeded.');
+    return metadataText;
+  } catch (error) {
+    console.warn('[Scraping] Metadata URL extraction failed:', error.message);
+    return '';
+  }
 };
 
 /**
@@ -159,7 +224,7 @@ export const scrapeUrl = async (url) => {
       }
 
       await page.waitForSelector('body', { timeout: 15000 });
-      await page.waitForTimeout(1500);
+      await sleep(1500);
 
       const rawText = await page.evaluate(() => {
         const elements = document.querySelectorAll('script, style, noscript');

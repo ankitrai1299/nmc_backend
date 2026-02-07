@@ -1,10 +1,11 @@
-import { scrapeUrl } from './scrapingService.js';
+import { scrapeUrl, extractReadableFromUrl, extractMetadataFromUrl } from './scrapingService.js';
 import { transcribe } from './transcriptionService.js';
 import { performAudit, performMultimodalAudit } from './auditService.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { YoutubeTranscript } from 'youtube-transcript';
+import OpenAI from 'openai';
 import { analyzeWithGemini } from '../geminiService.js';
 import AuditRecord from '../models/AuditRecord.js';
 import { extractTextFromImage } from './ocrService.js';
@@ -25,6 +26,20 @@ const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGE
 const delay = (minMs = 300, maxMs = 900) => {
   const jitter = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
   return new Promise((resolve) => setTimeout(resolve, jitter));
+};
+
+let openaiClient = null;
+
+const getOpenAIClient = () => {
+  if (!openaiClient) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not set. Required for URL analysis fallback.');
+    }
+    openaiClient = new OpenAI({ apiKey });
+    console.log('[URL Fallback] OpenAI client initialized');
+  }
+  return openaiClient;
 };
 
 const validateInputSize = (input, type) => {
@@ -212,6 +227,29 @@ const fetchYouTubeFallbackText = async (url, reason) => {
     : fallbackText;
 };
 
+const analyzeUrlWithOpenAI = async (url) => {
+  try {
+    await delay(500, 1200);
+    const openai = getOpenAIClient();
+    const response = await openai.responses.create({
+      model: 'gpt-4o-mini',
+      input: `Extract and summarize the main marketing/medical claims from this URL. Return plain text only. URL: ${url}`,
+      temperature: 0.2
+    });
+
+    const text = response.output_text?.trim() || '';
+    if (!text) {
+      throw new Error('OpenAI URL analysis returned empty content');
+    }
+
+    console.log('[URL Fallback] OpenAI URL analysis succeeded.');
+    return text;
+  } catch (error) {
+    console.warn('[URL Fallback] OpenAI URL analysis failed:', error.message);
+    return '';
+  }
+};
+
 const validateGeminiResult = (result) => {
   const requiredKeys = [
     'score',
@@ -356,7 +394,30 @@ const processUrl = async ({ url, category, analysisMode }) => {
   if (urlType === 'video' || urlType === 'audio') {
     const { buffer, mimetype } = await downloadMediaFile(url);
     if (mimetype.startsWith('text/') || mimetype.includes('html')) {
-      const { extractedText } = await scrapeUrl(url);
+      let extractedText = '';
+
+      try {
+        ({ extractedText } = await scrapeUrl(url));
+      } catch (error) {
+        console.warn('[Scraping] Puppeteer scrape failed:', error.message);
+      }
+
+      if (!extractedText) {
+        extractedText = await extractReadableFromUrl(url);
+      }
+
+      if (!extractedText) {
+        extractedText = await analyzeUrlWithOpenAI(url);
+      }
+
+      if (!extractedText) {
+        extractedText = await extractMetadataFromUrl(url);
+      }
+
+      if (!extractedText) {
+        extractedText = `Content could not be extracted due to access restrictions or timeouts. URL: ${url}. Please provide text or upload a file for review.`;
+      }
+
       const auditResult = await analyzeWithGemini({
         content: extractedText,
         inputType: 'url',
