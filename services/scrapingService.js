@@ -4,12 +4,8 @@ import fs from 'fs';
 import { Readability } from '@mozilla/readability';
 import Mercury from '@postlight/mercury-parser';
 import { JSDOM } from 'jsdom';
-import puppeteerExtra from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import puppeteerCore from 'puppeteer-core';
-
-puppeteerExtra.use(StealthPlugin());
-const puppeteer = puppeteerExtra.addExtra(puppeteerCore);
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 
 /**
  * Web Scraping Service
@@ -31,7 +27,7 @@ const USER_AGENTS = [
 const BOT_BLOCK_PATTERNS = [/captcha/i, /cloudflare/i, /access denied/i, /attention required/i, /verify you are human/i];
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const PUPPETEER_ENABLED = process.env.ENABLE_PUPPETEER === 'true';
-const ALLOW_PUPPETEER = !IS_PRODUCTION || PUPPETEER_ENABLED;
+const ALLOW_PUPPETEER = PUPPETEER_ENABLED;
 
 const delay = (minMs = 400, maxMs = 1200) => {
   const jitter = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
@@ -284,21 +280,16 @@ const fetchMercuryRawText = async (url) => {
 };
 
 const fetchPuppeteerArticleText = async (url) => {
-  if (!ALLOW_PUPPETEER) {
+  if (process.env.ENABLE_PUPPETEER !== 'true') {
     throw new Error('Puppeteer is disabled in this environment');
   }
   console.log('[Puppeteer + Readability] Extracting article from:', url);
-  
-  const { path: resolvedExecutablePath, isChromium } = await resolveExecutablePath();
-  if (!resolvedExecutablePath) {
-    throw new Error('No Chromium/Chrome executable found for Puppeteer. Set PUPPETEER_EXECUTABLE_PATH to chrome.exe or msedge.exe');
-  }
 
   const userAgent = getRandomUserAgent();
   const browser = await puppeteer.launch({
-    args: isChromium ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
-    executablePath: resolvedExecutablePath || undefined,
-    headless: isChromium ? chromium.headless : 'new'
+    args: chromium.args,
+    executablePath: await chromium.executablePath(),
+    headless: true,
   });
 
   try {
@@ -325,7 +316,7 @@ const fetchPuppeteerArticleText = async (url) => {
 
     // Extract text from Readability article
     const rawText = article?.textContent ?? '';
-    
+
     if (!rawText.trim()) {
       throw new Error('Readability extracted empty content from page');
     }
