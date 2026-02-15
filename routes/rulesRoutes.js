@@ -1,11 +1,10 @@
 import express from 'express';
-import { authMiddleware } from '../middleware/authMiddleware.js';
 import { getRulesMetadata } from '../services/rulesService.js';
 
 const router = express.Router();
 
 // GET /rules/metadata
-router.get('/rules/metadata', authMiddleware, (req, res) => {
+router.get('/rules/metadata', (req, res) => {
   try {
     const metadata = getRulesMetadata();
     console.log('[Rules] Metadata countries count:', Array.isArray(metadata.countries) ? metadata.countries.length : 0);
