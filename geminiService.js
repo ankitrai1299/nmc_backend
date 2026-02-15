@@ -4,6 +4,41 @@ import { VertexAI } from "@google-cloud/vertexai";
    CONFIG
 ================================ */
 const MODEL_NAME = "gemini-2.5-flash";
+const MAX_CONTENT_LENGTH = 10000;
+const GEMINI_TIMEOUT_MS = 30000;
+
+let vertexAIClient = null;
+
+const getVertexAIClient = () => {
+  if (!vertexAIClient) {
+    const projectId = process.env.VERTEX_PROJECT_ID;
+    const location = process.env.VERTEX_LOCATION;
+    
+    if (!projectId || !location) {
+      throw new Error("VERTEX_PROJECT_ID or VERTEX_LOCATION missing");
+    }
+    
+    vertexAIClient = new VertexAI({ project: projectId, location: location });
+    console.log('[Gemini] Vertex AI client initialized');
+  }
+  return vertexAIClient;
+};
+
+const truncateContent = (content) => {
+  if (!content || typeof content !== 'string') return '';
+  return content.length > MAX_CONTENT_LENGTH 
+    ? content.substring(0, MAX_CONTENT_LENGTH) 
+    : content;
+};
+
+const withTimeout = (promise, ms, errorMsg) => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error(errorMsg)), ms)
+    )
+  ]);
+};
 
 const cleanJsonString = (text = "") => {
   return text
@@ -134,31 +169,14 @@ export const analyzeWithGemini = async ({
   rules = [],
   contentContext = ''
 }) => {
-  const projectId = process.env.VERTEX_PROJECT_ID;
-  const location = process.env.VERTEX_LOCATION;
-  
-  console.log('[Gemini Service - analyzeWithGemini] Initializing Vertex AI client...');
-  console.log('[Gemini Service - analyzeWithGemini] Project ID:', projectId);
-  console.log('[Gemini Service - analyzeWithGemini] Location:', location);
-  
-  if (!projectId) {
-    throw new Error("VERTEX_PROJECT_ID missing");
-  }
-  if (!location) {
-    throw new Error("VERTEX_LOCATION missing");
-  }
-
-  const vertexAI = new VertexAI({
-    project: projectId,
-    location: location
-  });
-  console.log("[Gemini Service - analyzeWithGemini] ✓ Vertex initialized (using GOOGLE_APPLICATION_CREDENTIALS)");
+  const truncatedContent = truncateContent(content);
+  const vertexAI = getVertexAIClient();
 
   const model = vertexAI.getGenerativeModel({
     model: MODEL_NAME,
     generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 8192,
+      temperature: 0.0,
+      maxOutputTokens: 1500,
       topP: 0.95,
     },
   });
@@ -174,13 +192,15 @@ export const analyzeWithGemini = async ({
   });
 
   const parts = [
-    { text: content },
+    { text: truncatedContent },
     { text: prompt },
   ];
 
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts }],
-  });
+  const result = await withTimeout(
+    model.generateContent({ contents: [{ role: "user", parts }] }),
+    GEMINI_TIMEOUT_MS,
+    'Gemini API call timed out'
+  );
 
   let rawText =
     result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -192,27 +212,8 @@ export const analyzeWithGemini = async ({
   try {
     return tryParseJson(rawText);
   } catch (err) {
-    console.error("❌ RAW GEMINI OUTPUT:\n", cleanJsonString(rawText));
-
-    // One repair attempt: ask Gemini to fix JSON only
-    const repairPrompt = `Fix and return ONLY valid JSON for this response. Do not add explanations.\n\nRAW RESPONSE:\n${rawText}`;
-    const repairResult = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: repairPrompt }] }],
-    });
-
-    const repairText =
-      repairResult?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-    if (!repairText) {
-      throw new Error("Gemini returned incomplete or invalid JSON");
-    }
-
-    try {
-      return tryParseJson(repairText);
-    } catch (repairError) {
-      console.error("❌ RAW GEMINI REPAIR OUTPUT:\n", cleanJsonString(repairText));
-      throw new Error("Gemini returned incomplete or invalid JSON");
-    }
+    console.error('[Gemini] JSON parse failed');
+    throw new Error("Gemini returned invalid JSON");
   }
 };
 
@@ -220,24 +221,7 @@ export const analyzeWithGemini = async ({
    OPTIONAL: AUDIO SUMMARY
 ================================ */
 export const generateAudioSummary = async (text) => {
-  const projectId = process.env.VERTEX_PROJECT_ID;
-  const location = process.env.VERTEX_LOCATION;
-  
-  console.log('[Gemini Service - generateAudioSummary] Initializing Vertex AI client...');
-  console.log('[Gemini Service - generateAudioSummary] Project ID:', projectId);
-  console.log('[Gemini Service - generateAudioSummary] Location:', location);
-  
-  if (!projectId) {
-    throw new Error("VERTEX_PROJECT_ID missing");
-  }
-  if (!location) {
-    throw new Error("VERTEX_LOCATION missing");
-  }
-  const vertexAI = new VertexAI({
-    project: projectId,
-    location: location
-  });
-  console.log("[Gemini Service - generateAudioSummary] ✓ Vertex initialized (using GOOGLE_APPLICATION_CREDENTIALS)");
+  const vertexAI = getVertexAIClient();
 
   const ttsModel = vertexAI.getGenerativeModel({
     model: "gemini-2.5-flash-preview-tts",
@@ -258,45 +242,33 @@ export const generateAudioSummary = async (text) => {
 };
 
 export const extractClaimsWithGemini = async (text) => {
-  const projectId = process.env.VERTEX_PROJECT_ID;
-  const location = process.env.VERTEX_LOCATION;
-  
-  console.log('[Gemini Service - extractClaimsWithGemini] Initializing Vertex AI client...');
-  console.log('[Gemini Service - extractClaimsWithGemini] Project ID:', projectId);
-  console.log('[Gemini Service - extractClaimsWithGemini] Location:', location);
-  
-  if (!projectId) {
-    throw new Error('VERTEX_PROJECT_ID missing');
-  }
-  if (!location) {
-    throw new Error('VERTEX_LOCATION missing');
-  }
-
   const cleaned = (text || '').trim();
   if (!cleaned) {
     throw new Error('No text provided for claim extraction');
   }
 
-  const vertexAI = new VertexAI({
-    project: projectId,
-    location: location
-  });
-  console.log("[Gemini Service - extractClaimsWithGemini] ✓ Vertex initialized (using GOOGLE_APPLICATION_CREDENTIALS)");
+  const vertexAI = getVertexAIClient();
 
   const model = vertexAI.getGenerativeModel({
     model: MODEL_NAME,
     generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 2048,
+      temperature: 0.0,
+      maxOutputTokens: 1500,
       topP: 0.9
     }
   });
 
   const prompt = `Extract the key marketing, medical, and compliance-relevant claims from the following document text. Return plain text only. Do NOT include JSON or markdown. If no claims are present, return a short sentence stating that no explicit claims were found.`;
 
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: `${prompt}\n\n${cleaned.substring(0, 16000)}` }] }]
-  });
+  const truncatedText = cleaned.substring(0, MAX_CONTENT_LENGTH);
+  
+  const result = await withTimeout(
+    model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: `${prompt}\n\n${truncatedText}` }] }]
+    }),
+    GEMINI_TIMEOUT_MS,
+    'Gemini claim extraction timed out'
+  );
 
   const output = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
   const extracted = output.trim();

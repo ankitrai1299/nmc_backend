@@ -9,6 +9,10 @@ import { spawn } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const AUDIO_DOWNLOAD_ENABLED = process.env.ENABLE_YOUTUBE_AUDIO === 'true';
+const ALLOW_AUDIO_DOWNLOAD = !IS_PRODUCTION || AUDIO_DOWNLOAD_ENABLED;
+
 const AUDIO_TIMEOUT_MS = 2 * 60 * 1000;
 const TRANSCRIBE_TIMEOUT_MS = 3 * 60 * 1000;
 const MAX_RETRIES = 3;
@@ -47,21 +51,12 @@ const withTimeout = async (promise, timeoutMs, timeoutMessage) => {
 };
 
 const retryWithBackoff = async (fn, attempts, label) => {
-  let lastError;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      console.warn(`[YouTube Transcript] ${label} failed (attempt ${attempt}/${attempts}):`, error.message);
-      if (attempt < attempts) {
-        const backoffMs = BACKOFF_BASE_MS * (BACKOFF_FACTOR ** (attempt - 1));
-        await sleep(backoffMs);
-      }
-    }
+  try {
+    return await fn();
+  } catch (error) {
+    console.warn(`[YouTube Transcript] ${label} failed:`, error.message);
+    throw error;
   }
-
-  throw lastError;
 };
 
 const normalizeUrl = (videoUrl) => {
@@ -277,17 +272,32 @@ export const getYoutubeTranscript = async (videoUrl) => {
     if (transcript) {
       return transcript;
     }
-    console.warn('[YouTube Transcript] Captions empty. Switching to audio transcription...');
   } catch (error) {
-    console.warn('[YouTube Transcript] Captions disabled. Switching to audio transcription...');
+    console.warn('[YouTube Transcript] Captions failed:', error.message);
   }
 
+  // In production, do NOT download audio - return metadata only
+  if (!ALLOW_AUDIO_DOWNLOAD) {
+    console.log('[YouTube Transcript] Audio download disabled in production. Fetching metadata...');
+    try {
+      const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`);
+      if (response.ok) {
+        const data = await response.json();
+        return `YouTube video transcript unavailable. Title: ${data.title || 'Unknown'}. Channel: ${data.author_name || 'Unknown'}. URL: ${normalized}`;
+      }
+    } catch (err) {
+      console.warn('[YouTube Transcript] Metadata fetch failed:', err.message);
+    }
+    return `YouTube transcript unavailable. Video URL: ${normalized}. Please provide a summary or upload a file.`;
+  }
+
+  // Audio download only in development or when explicitly enabled
   const tempFile = path.join(os.tmpdir(), `yt-audio-${Date.now()}.mp3`);
   try {
     await retryWithBackoff(() => downloadYoutubeAudio(normalized, tempFile), MAX_RETRIES, 'Audio download');
     return await transcribeAudioWithOpenAI(tempFile);
   } catch (error) {
-    console.warn('[YouTube Transcript] Audio transcription failed. Returning fallback text:', error.message);
+    console.warn('[YouTube Transcript] Audio transcription failed:', error.message);
     return `YouTube transcript unavailable. Reason: ${error.message}. Video URL: ${normalized}`;
   } finally {
     fs.unlink(tempFile, () => undefined);

@@ -15,6 +15,7 @@ import { extractTextFromImage } from './ocrService.js';
 import { buildAuditInput } from './auditInputBuilder.ts';
 
 const MAX_TEXT_LENGTH = 100000;
+const MAX_CONTENT_FOR_AI = 10000;
 const MAX_MEDIA_SIZE = 100 * 1024 * 1024;
 const REQUEST_TIMEOUT = 60000;
 const USER_AGENTS = [
@@ -50,6 +51,13 @@ const validateInputSize = (input, type) => {
   if (type === 'text' && typeof input === 'string' && input.length > MAX_TEXT_LENGTH) {
     throw new Error(`Text content exceeds ${MAX_TEXT_LENGTH} characters limit`);
   }
+};
+
+const truncateForAI = (content) => {
+  if (!content || typeof content !== 'string') return '';
+  return content.length > MAX_CONTENT_FOR_AI 
+    ? content.substring(0, MAX_CONTENT_FOR_AI)
+    : content;
 };
 
 export const detectContentType = (input) => {
@@ -267,40 +275,30 @@ const scanDocumentWithOpenAI = async (text) => {
   ];
 
   if (!normalized || normalized.length < 200 || placeholderPatterns.some((pattern) => pattern.test(normalized))) {
-    console.warn('[Document Scan] Skipping OpenAI scan: insufficient or placeholder text');
+    console.warn('[Document Scan] Skipping: insufficient text');
     return '';
   }
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    try {
-      await delay(400, 900);
-      const openai = getOpenAIClient();
-      const response = await openai.responses.create({
-        model: 'gpt-4o-mini',
-        input: `Extract the key marketing, medical, and compliance-relevant claims from this document. Return plain text only.\n\n${normalized.substring(0, 12000)}`,
-        temperature: 0.2
-      });
+  try {
+    await delay(400, 900);
+    const openai = getOpenAIClient();
+    const response = await openai.responses.create({
+      model: 'gpt-4o-mini',
+      input: `Extract the key marketing, medical, and compliance-relevant claims from this document. Return plain text only.\n\n${normalized.substring(0, MAX_CONTENT_FOR_AI)}`,
+      temperature: 0.2
+    });
 
-      const scanned = response.output_text?.trim() || '';
-      if (!scanned || scanned.length < 200) {
-        throw new Error('OpenAI document scan returned empty or too-short content');
-      }
-
-      console.log('[Document Scan] OpenAI scan succeeded.');
-      return scanned;
-    } catch (error) {
-      console.warn('[Document Scan] OpenAI scan failed:', error.message);
-      if (attempt < 2) {
-        const backoffMs = 600 * attempt;
-        console.log(`[Document Scan] Retrying in ${backoffMs}ms...`);
-        await delay(backoffMs, backoffMs + 200);
-        continue;
-      }
-      return '';
+    const scanned = response.output_text?.trim() || '';
+    if (!scanned || scanned.length < 200) {
+      throw new Error('OpenAI scan returned empty content');
     }
-  }
 
-  return '';
+    console.log('[Document Scan] Success');
+    return scanned;
+  } catch (error) {
+    console.warn('[Document Scan] Failed:', error.message);
+    return '';
+  }
 };
 
 
@@ -361,9 +359,10 @@ const saveAuditRecord = async ({
 
 const processText = async ({ text, category, analysisMode, country, region, rules }) => {
   validateInputSize(text, 'text');
+  const truncatedText = truncateForAI(text);
 
   const auditResult = await analyzeWithGemini({
-    content: text,
+    content: truncatedText,
     inputType: 'text',
     category,
     analysisMode,
@@ -375,7 +374,7 @@ const processText = async ({ text, category, analysisMode, country, region, rule
   return {
     contentType: 'text',
     originalInput: text,
-    extractedText: text,
+    extractedText: truncatedText,
     transcript: '',
     auditResult
   };
@@ -384,9 +383,10 @@ const processText = async ({ text, category, analysisMode, country, region, rule
 const processMediaBuffer = async ({ buffer, mimetype, inputType, originalInput, category, analysisMode, country, region, rules }) => {
   const transcriptionResult = await transcribe(buffer, mimetype);
   const transcriptText = transcriptionResult.transcript;
+  const truncatedTranscript = truncateForAI(transcriptText);
 
   const auditResult = await analyzeWithGemini({
-    content: transcriptText,
+    content: truncatedTranscript,
     inputType,
     category,
     analysisMode,
@@ -411,8 +411,10 @@ const processImageBuffer = async ({ buffer, originalInput, category, analysisMod
     throw new Error('Unable to extract readable text from image');
   }
 
+  const truncatedText = truncateForAI(extractedText);
+
   const auditResult = await analyzeWithGemini({
-    content: extractedText,
+    content: truncatedText,
     inputType: 'image',
     category,
     analysisMode,
@@ -424,8 +426,8 @@ const processImageBuffer = async ({ buffer, originalInput, category, analysisMod
   return {
     contentType: 'image',
     originalInput,
-    extractedText,
-    transcript: extractedText,
+    extractedText: truncatedText,
+    transcript: truncatedText,
     auditResult
   };
 };
@@ -436,16 +438,17 @@ const processUrl = async ({ url, category, analysisMode, country, region, rules 
   if (isYouTubeUrl(url)) {
     let transcriptText = '';
     try {
-      console.log('[YouTube Transcript] Captions -> Audio fallback flow enabled');
+      console.log('[YouTube] Fetching transcript...');
       transcriptText = await getYoutubeTranscript(url);
-      console.log(`[YouTube Transcript] Transcript length: ${transcriptText.length} chars`);
     } catch (error) {
-      console.warn('[YouTube Transcript] Fallback to metadata after audio/transcript failure:', error.message);
+      console.warn('[YouTube] Fallback to metadata:', error.message);
       transcriptText = await fetchYouTubeFallbackText(url, error.message);
     }
 
+    const truncatedTranscript = truncateForAI(transcriptText);
+
     const auditResult = await analyzeWithGemini({
-      content: transcriptText,
+      content: truncatedTranscript,
       inputType: 'video',
       category,
       analysisMode,
@@ -457,8 +460,8 @@ const processUrl = async ({ url, category, analysisMode, country, region, rules 
     return {
       contentType: 'video',
       originalInput: url,
-      extractedText: transcriptText,
-      transcript: transcriptText,
+      extractedText: truncatedTranscript,
+      transcript: truncatedTranscript,
       auditResult
     };
   }
@@ -487,11 +490,13 @@ const processUrl = async ({ url, category, analysisMode, country, region, rules 
       }
 
       if (!extractedText) {
-        extractedText = `Content could not be extracted due to access restrictions or timeouts. URL: ${url}. Please provide text or upload a file for review.`;
+        extractedText = `Content could not be extracted. URL: ${url}. Please provide text or upload a file.`;
       }
 
+      const truncatedText = truncateForAI(extractedText);
+
       const auditResult = await analyzeWithGemini({
-        content: extractedText,
+        content: truncatedText,
         inputType: 'url',
         category,
         analysisMode,
@@ -503,8 +508,8 @@ const processUrl = async ({ url, category, analysisMode, country, region, rules 
       return {
         contentType: 'webpage',
         originalInput: url,
-        extractedText,
-        transcript: extractedText,
+        extractedText: truncatedText,
+        transcript: truncatedText,
         auditResult
       };
     }
@@ -597,9 +602,10 @@ const processDocumentBuffer = async ({ buffer, mimetype, originalInput, category
   }
 
   const auditText = scannedText || extractedText;
+  const truncatedText = truncateForAI(auditText);
 
   const auditResult = await analyzeWithGemini({
-    content: auditText,
+    content: truncatedText,
     inputType: 'document',
     category,
     analysisMode,
@@ -609,7 +615,7 @@ const processDocumentBuffer = async ({ buffer, mimetype, originalInput, category
   });
 
   if (!auditResult.transcription) {
-    auditResult.transcription = extractedText;
+    auditResult.transcription = truncatedText;
   }
 
   return {

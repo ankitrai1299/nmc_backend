@@ -14,10 +14,6 @@ const getTranslationClient = () => {
     const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID;
     const location = process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'asia-southeast1';
     
-    console.log('[Audit Input Builder] Initializing translation client...');
-    console.log('[Audit Input Builder] Project ID:', projectId);
-    console.log('[Audit Input Builder] Location:', location);
-    
     if (!projectId) {
       throw new Error('VERTEX_AI_PROJECT_ID missing for translation');
     }
@@ -27,7 +23,7 @@ const getTranslationClient = () => {
       location: location
     });
     
-    console.log('[Audit Input Builder] ✓ Translation client initialized (using GOOGLE_APPLICATION_CREDENTIALS)');
+    console.log('[Audit Input Builder] Translation client initialized');
   }
   return translationClient;
 };
@@ -37,14 +33,15 @@ const translateToEnglish = async (text: string, language: string) => {
   const model = vertexAI.getGenerativeModel({
     model: TRANSLATION_MODEL,
     generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 4096
+      temperature: 0.0,
+      maxOutputTokens: 1500
     }
   });
 
+  const truncatedText = text.length > 10000 ? text.substring(0, 10000) : text;
   const prompt = `Translate the following ${language} text to English. Preserve medical terms and claims. Return plain text only.`;
   const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: `${prompt}\n\n${text}` }] }]
+    contents: [{ role: 'user', parts: [{ text: `${prompt}\n\n${truncatedText}` }] }]
   });
 
   const translated = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';

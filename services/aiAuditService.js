@@ -22,10 +22,6 @@ const getVertexAIClient = () => {
     const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;
     const location = process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || process.env.GOOGLE_VERTEX_LOCATION || 'us-central1';
     
-    console.log('[AI Audit] Initializing Vertex AI client...');
-    console.log('[AI Audit] Project ID:', projectId);
-    console.log('[AI Audit] Location:', location);
-    
     if (!projectId) {
       throw new Error('GOOGLE_VERTEX_PROJECT or VERTEX_AI_PROJECT_ID is not set');
     }
@@ -35,7 +31,7 @@ const getVertexAIClient = () => {
       location: location
     });
     
-    console.log('[AI Audit] ✓ Vertex AI client initialized (using GOOGLE_APPLICATION_CREDENTIALS)');
+    console.log('[AI Audit] Vertex AI client initialized');
   }
   
   return vertexAIClient;

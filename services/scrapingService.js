@@ -1,4 +1,5 @@
 import chromium from '@sparticuz/chromium';
+import axios from 'axios';
 import fs from 'fs';
 import { Readability } from '@mozilla/readability';
 import Mercury from '@postlight/mercury-parser';
@@ -19,7 +20,7 @@ const MAX_CONTENT_LENGTH = 50000; // Limit scraped content to 50KB
 const MIN_CONTENT_CHARS = 800;
 const MIN_CONTENT_WORDS = 120;
 const REQUEST_TIMEOUT = 60000; // 60 seconds
-const MAX_ATTEMPTS = 3;
+const PUPPETEER_TIMEOUT = 45000;
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -28,6 +29,9 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15'
 ];
 const BOT_BLOCK_PATTERNS = [/captcha/i, /cloudflare/i, /access denied/i, /attention required/i, /verify you are human/i];
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PUPPETEER_ENABLED = process.env.ENABLE_PUPPETEER === 'true';
+const ALLOW_PUPPETEER = !IS_PRODUCTION || PUPPETEER_ENABLED;
 
 const delay = (minMs = 400, maxMs = 1200) => {
   const jitter = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
@@ -237,6 +241,28 @@ const fetchJinaReaderRawText = async (url) => {
   return normalizeWhitespace(text);
 };
 
+const fetchReadableWithAxios = async (url) => {
+  const response = await axios.get(url, {
+    timeout: REQUEST_TIMEOUT,
+    headers: {
+      'User-Agent': getRandomUserAgent(),
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    }
+  });
+
+  if (!response?.data || typeof response.data !== 'string') {
+    throw new Error('Readability fetch returned empty HTML');
+  }
+
+  const dom = new JSDOM(response.data, { url });
+  const article = new Readability(dom.window.document).parse();
+  if (article?.textContent) {
+    return cleanExtractedText(article.textContent);
+  }
+
+  return '';
+};
+
 const fetchMercuryText = async (url) => {
   const result = await Mercury.parse(url, { fetchAllPages: false });
   const raw = result?.content || result?.excerpt || '';
@@ -258,6 +284,9 @@ const fetchMercuryRawText = async (url) => {
 };
 
 const fetchPuppeteerArticleText = async (url) => {
+  if (!ALLOW_PUPPETEER) {
+    throw new Error('Puppeteer is disabled in this environment');
+  }
   console.log('[Puppeteer + Readability] Extracting article from:', url);
   
   const { path: resolvedExecutablePath, isChromium } = await resolveExecutablePath();
@@ -280,9 +309,9 @@ const fetchPuppeteerArticleText = async (url) => {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
     });
     await page.setViewport({ width: 1366, height: 768 });
-    page.setDefaultNavigationTimeout(REQUEST_TIMEOUT);
+    page.setDefaultNavigationTimeout(PUPPETEER_TIMEOUT);
 
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: REQUEST_TIMEOUT });
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: PUPPETEER_TIMEOUT });
     await page.waitForSelector('body', { timeout: 15000 });
     await sleep(1200);
 
