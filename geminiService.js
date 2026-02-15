@@ -51,6 +51,10 @@ const cleanJsonString = (text = "") => {
     .trim();
 };
 
+const removeTrailingCommas = (text = "") => {
+  return text.replace(/,\s*([}\]])/g, '$1');
+};
+
 const extractJsonCandidate = (text = "") => {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -60,10 +64,70 @@ const extractJsonCandidate = (text = "") => {
   return text.slice(start, end + 1).trim();
 };
 
+const extractBalancedJson = (text = "") => {
+  const trimmed = text.trim();
+  const startIndex = trimmed.search(/[\[{]/);
+  if (startIndex === -1) return trimmed;
+
+  const opener = trimmed[startIndex];
+  const closer = opener === '[' ? ']' : '}';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = startIndex; i < trimmed.length; i += 1) {
+    const char = trimmed[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === opener) depth += 1;
+    if (char === closer) depth -= 1;
+
+    if (depth === 0) {
+      return trimmed.slice(startIndex, i + 1).trim();
+    }
+  }
+
+  return trimmed.slice(startIndex).trim();
+};
+
 const tryParseJson = (text) => {
   const cleaned = cleanJsonString(text);
-  const candidate = extractJsonCandidate(cleaned);
-  return JSON.parse(candidate);
+  const candidates = [
+    cleaned,
+    extractJsonCandidate(cleaned),
+    extractBalancedJson(cleaned)
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      try {
+        return JSON.parse(removeTrailingCommas(candidate));
+      } catch {
+        // Try next candidate.
+      }
+    }
+  }
+
+  throw new Error('Invalid JSON');
 };
 
 /* ===============================

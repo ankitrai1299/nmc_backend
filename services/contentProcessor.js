@@ -524,7 +524,10 @@ const processUrl = async ({ url, category, analysisMode, country, region, rules 
     });
   }
 
-  const extractionPlan = ['jina_reader', 'readability', 'puppeteer'];
+  const allowPuppeteer = process.env.NODE_ENV !== 'production' || process.env.ENABLE_PUPPETEER === 'true';
+  const extractionPlan = allowPuppeteer
+    ? ['jina_reader', 'readability', 'puppeteer']
+    : ['jina_reader', 'readability'];
   let lastError;
 
   for (const method of extractionPlan) {
@@ -579,6 +582,33 @@ const processUrl = async ({ url, category, analysisMode, country, region, rules 
       lastError = error;
       console.warn('[Pipeline] Extraction attempt failed', JSON.stringify({ method, message: error.message }));
     }
+  }
+
+  try {
+    const metadataText = await extractMetadataFromUrl(url);
+    if (metadataText) {
+      const truncatedText = truncateForAI(metadataText);
+      const auditResult = await analyzeWithGemini({
+        content: truncatedText,
+        inputType: 'article',
+        category,
+        analysisMode,
+        country,
+        region,
+        rules,
+        contentContext: 'Input is page metadata only. Provide best-effort compliance analysis.'
+      });
+
+      return {
+        contentType: 'webpage',
+        originalInput: url,
+        extractedText: metadataText,
+        transcript: metadataText,
+        auditResult
+      };
+    }
+  } catch (error) {
+    lastError = error;
   }
 
   throw new Error(`Blog content extraction failed: ${lastError?.message || 'Unknown error'}`);
