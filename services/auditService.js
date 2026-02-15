@@ -13,13 +13,26 @@ import { extractClaims, shouldExtractClaims } from './claimsExtractor.js';
 // Reuse AI client instances
 let vertexAIClient = null;
 
+const getVertexCredentials = () => {
+  const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  if (!rawCredentials) {
+    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
+  }
+  try {
+    return JSON.parse(rawCredentials);
+  } catch (error) {
+    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON');
+  }
+};
+
 /**
  * Get or create Vertex AI client instance
  * @returns {VertexAI} Vertex AI client
  */
 const getVertexAIClient = () => {
   if (!vertexAIClient) {
-    const projectId = process.env.GOOGLE_VERTEX_PROJECT || process.env.VERTEX_AI_PROJECT_ID;
+    const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;
+    const credentials = getVertexCredentials();
     // Always use us-central1 region
     const location = 'us-central1';
     
@@ -29,7 +42,8 @@ const getVertexAIClient = () => {
     
     vertexAIClient = new VertexAI({ 
       project: projectId, 
-      location: location
+      location: location,
+      credentials
     });
     
     console.log('[Audit Service] Vertex AI client initialized | Region: us-central1 | Model: gemini-2.0-flash');

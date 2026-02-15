@@ -9,15 +9,29 @@ const TRANSLATION_MODEL = 'gemini-2.5-flash';
 
 let translationClient: VertexAI | null = null;
 
+const getVertexCredentials = () => {
+  const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  if (!rawCredentials) {
+    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
+  }
+  try {
+    return JSON.parse(rawCredentials);
+  } catch (error) {
+    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON');
+  }
+};
+
 const getTranslationClient = () => {
   if (!translationClient) {
-    const projectId = process.env.VERTEX_AI_PROJECT_ID;
+    const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID;
     if (!projectId) {
       throw new Error('VERTEX_AI_PROJECT_ID missing for translation');
     }
+    const credentials = getVertexCredentials();
     translationClient = new VertexAI({
       project: projectId,
-      location: process.env.VERTEX_AI_LOCATION || 'asia-southeast1'
+      location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'asia-southeast1',
+      credentials
     });
   }
   return translationClient;

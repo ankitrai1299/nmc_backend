@@ -59,7 +59,7 @@ GOOGLE_VERTEX_PROJECT=your-project-id
 GOOGLE_VERTEX_LOCATION=us-central1
 
 # Google Application Credentials
-GOOGLE_APPLICATION_CREDENTIALS=satark-ai-486508-18a7a7906136.json
+GOOGLE_APPLICATION_CREDENTIALS_JSON=your-service-account-json
 
 # Server Configuration
 PORT=3001

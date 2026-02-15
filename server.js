@@ -1,9 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { connectDB } from './config/database.js';
 import auditRoutes from './routes/auditRoutes.js';
 import rulesRoutes from './routes/rulesRoutes.js';
@@ -14,23 +11,21 @@ console.log('[Server] Importing auth routes...');
 import authRoutes from './routes/authRoutes.js';
 console.log('[Server] Auth routes imported:', authRoutes ? '✅' : '❌');
 
-// Get current directory
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 // Load environment variables
 dotenv.config();
 
-// Setup Google Cloud credentials from JSON env var (Render-friendly)
-if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-  const credentialsPath = '/tmp/gcp-key.json';
-  fs.writeFileSync(credentialsPath, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON, 'utf8');
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-  console.log(`✅ Google credentials written to ${credentialsPath}`);
+// Validate required environment variables
+const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;
+const missingEnv = [];
+
+if (!projectId) {
+  missingEnv.push('VERTEX_PROJECT_ID');
 }
 
-// Validate required environment variables
-const requiredEnv = ["VERTEX_AI_PROJECT_ID"];
-const missingEnv = requiredEnv.filter((key) => !process.env[key]);
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  missingEnv.push('GOOGLE_APPLICATION_CREDENTIALS_JSON');
+}
+
 if (missingEnv.length > 0) {
   console.error(`Missing required environment variables: ${missingEnv.join(", ")}`);
   process.exit(1);
@@ -137,9 +132,9 @@ app.use((err, req, res, next) => {
       console.log(`🚀 NextComply AI Backend server running on port ${PORT}`);
       console.log(`📍 Backend URL: http://localhost:${PORT}`);
       console.log(`📍 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
-      console.log(`☁️  Vertex AI Project: ${process.env.VERTEX_AI_PROJECT_ID || '✗ Missing'}`);
-      console.log(`📍 Vertex AI Location: ${process.env.VERTEX_AI_LOCATION || 'us-central1'}`);
-      console.log(`🔐 Service Account: ${process.env.GOOGLE_APPLICATION_CREDENTIALS ? '✓ Configured' : '✗ Missing'}`);
+      console.log(`☁️  Vertex AI Project: ${projectId || '✗ Missing'}`);
+      console.log(`📍 Vertex AI Location: ${process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'us-central1'}`);
+      console.log(`🔐 Service Account JSON: ${process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ? '✓ Configured' : '✗ Missing'}`);
       console.log(`💾 MongoDB: ${process.env.MONGODB_URI ? '✓ Configured' : '✗ Missing (Auth disabled)'}`);
       console.log(`🔗 Available routes:`);
       console.log(`   - GET  /health`);

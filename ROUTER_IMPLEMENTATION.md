@@ -166,7 +166,7 @@ OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 # Gemini/Vertex AI - For compliance analysis
 GOOGLE_VERTEX_PROJECT=your-project-id
 GOOGLE_VERTEX_LOCATION=us-central1
-GOOGLE_APPLICATION_CREDENTIALS=service-account.json
+GOOGLE_APPLICATION_CREDENTIALS_JSON=your-service-account-json
 
 # Alternative
 GOOGLE_API_KEY=your-api-key

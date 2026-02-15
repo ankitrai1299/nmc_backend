@@ -31,8 +31,8 @@ export const getOpenAIConfig = () => {
  * @returns {object} Vertex AI config
  */
 export const getGeminiConfig = () => {
-  const projectId = process.env.GOOGLE_VERTEX_PROJECT || process.env.VERTEX_AI_PROJECT_ID;
-  const location = process.env.GOOGLE_VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'us-central1';
+  const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;
+  const location = process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || process.env.GOOGLE_VERTEX_LOCATION || 'us-central1';
   
   if (!projectId) {
     throw new Error('GOOGLE_VERTEX_PROJECT or VERTEX_AI_PROJECT_ID is not set. Required for compliance analysis.');
@@ -52,7 +52,7 @@ export const getGeminiConfig = () => {
  */
 export const validateAISeparation = () => {
   const openaiKey = process.env.OPENAI_API_KEY;
-  const geminiProject = process.env.GOOGLE_VERTEX_PROJECT || process.env.VERTEX_AI_PROJECT_ID;
+  const geminiProject = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;
   
   if (!openaiKey) {
     console.warn('⚠️  OPENAI_API_KEY not set - transcription will fail');

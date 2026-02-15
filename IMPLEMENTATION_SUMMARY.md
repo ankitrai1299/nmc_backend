@@ -85,7 +85,7 @@ OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 ```env
 GOOGLE_VERTEX_PROJECT=your-project-id
 GOOGLE_VERTEX_LOCATION=us-central1
-GOOGLE_APPLICATION_CREDENTIALS=service-account.json
+GOOGLE_APPLICATION_CREDENTIALS_JSON=your-service-account-json
 ```
 
 ### Both Required for Full Functionality

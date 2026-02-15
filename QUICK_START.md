@@ -24,7 +24,7 @@ Create `.env` file:
 MONGODB_URI=mongodb://localhost:27017/satark-ai-compliance
 GOOGLE_VERTEX_PROJECT=your-project-id
 GOOGLE_VERTEX_LOCATION=us-central1
-GOOGLE_APPLICATION_CREDENTIALS=your-service-account.json
+GOOGLE_APPLICATION_CREDENTIALS_JSON=your-service-account-json
 PORT=3001
 ```
 

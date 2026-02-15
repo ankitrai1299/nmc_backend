@@ -19,7 +19,7 @@ OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 # Gemini/Vertex AI - For compliance analysis ONLY
 GOOGLE_VERTEX_PROJECT=your-project-id
 GOOGLE_VERTEX_LOCATION=us-central1
-GOOGLE_APPLICATION_CREDENTIALS=service-account.json
+GOOGLE_APPLICATION_CREDENTIALS_JSON=your-service-account-json
 ```
 
 ### Rules
@@ -217,7 +217,7 @@ curl -X POST http://localhost:3001/api/analyze \
 ## Troubleshooting
 
 ### "OPENAI_API_KEY is not set"
-- Add `OPENAI_API_KEY=YOUR_OPENAI_API_KEY` to `.env`
+- Add `OPENAI_API_KEY=sk-...` to `.env`
 - Required for audio/video transcription
 
 ### "GOOGLE_VERTEX_PROJECT is not set"

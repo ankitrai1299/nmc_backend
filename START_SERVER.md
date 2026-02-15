@@ -17,7 +17,7 @@
    MONGODB_URI=mongodb://localhost:27017/satark-ai-compliance
    GOOGLE_VERTEX_PROJECT=your-project-id
    GOOGLE_VERTEX_LOCATION=us-central1
-   GOOGLE_APPLICATION_CREDENTIALS=satark-ai-486508-18a7a7906136.json
+   GOOGLE_APPLICATION_CREDENTIALS_JSON=your-service-account-json
    PORT=3001
    ```
 

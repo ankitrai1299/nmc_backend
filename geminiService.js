@@ -5,6 +5,18 @@ import { VertexAI } from "@google-cloud/vertexai";
 ================================ */
 const MODEL_NAME = "gemini-2.5-flash";
 
+const getVertexCredentials = () => {
+  const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  if (!rawCredentials) {
+    throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON is not set");
+  }
+  try {
+    return JSON.parse(rawCredentials);
+  } catch (error) {
+    throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON");
+  }
+};
+
 const cleanJsonString = (text = "") => {
   return text
     .replace(/```json/gi, "")
@@ -134,13 +146,16 @@ export const analyzeWithGemini = async ({
   rules = [],
   contentContext = ''
 }) => {
-  if (!process.env.VERTEX_AI_PROJECT_ID) {
+  const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID;
+  if (!projectId) {
     throw new Error("VERTEX_AI_PROJECT_ID missing");
   }
+  const credentials = getVertexCredentials();
 
   const vertexAI = new VertexAI({
-    project: process.env.VERTEX_AI_PROJECT_ID,
-    location: process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+    project: projectId,
+    location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+    credentials
   });
 
   const model = vertexAI.getGenerativeModel({
@@ -209,9 +224,11 @@ export const analyzeWithGemini = async ({
    OPTIONAL: AUDIO SUMMARY
 ================================ */
 export const generateAudioSummary = async (text) => {
+  const credentials = getVertexCredentials();
   const vertexAI = new VertexAI({
-    project: process.env.VERTEX_AI_PROJECT_ID,
-    location: process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+    project: process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID,
+    location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+    credentials
   });
 
   const ttsModel = vertexAI.getGenerativeModel({
@@ -233,9 +250,11 @@ export const generateAudioSummary = async (text) => {
 };
 
 export const extractClaimsWithGemini = async (text) => {
-  if (!process.env.VERTEX_AI_PROJECT_ID) {
+  const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID;
+  if (!projectId) {
     throw new Error('VERTEX_AI_PROJECT_ID missing');
   }
+  const credentials = getVertexCredentials();
 
   const cleaned = (text || '').trim();
   if (!cleaned) {
@@ -243,8 +262,9 @@ export const extractClaimsWithGemini = async (text) => {
   }
 
   const vertexAI = new VertexAI({
-    project: process.env.VERTEX_AI_PROJECT_ID,
-    location: process.env.VERTEX_AI_LOCATION || 'asia-southeast1'
+    project: projectId,
+    location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'asia-southeast1',
+    credentials
   });
 
   const model = vertexAI.getGenerativeModel({
