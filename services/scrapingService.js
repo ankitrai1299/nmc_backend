@@ -5,7 +5,6 @@ import { Readability } from '@mozilla/readability';
 import Mercury from '@postlight/mercury-parser';
 import { JSDOM } from 'jsdom';
 import puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
 
 /**
  * Web Scraping Service
