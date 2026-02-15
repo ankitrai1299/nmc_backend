@@ -64,38 +64,22 @@ if (missingEnv.length > 0) {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
-const allowedOrigins = new Set([
-  'https://nextcomplyai.com',
-  'https://www.nextcomplyai.com',
-  'https://www.nextdoc.in',
-  'https://nextdoc.in',
-  'http://localhost:3000',
-  'http://localhost:5173'
-]);
-
-if (process.env.FRONTEND_URL) {
-  allowedOrigins.add(process.env.FRONTEND_URL.replace(/\/$/, ''));
-}
-
+// CORS Configuration - MUST be before routes
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) {
-      callback(null, true);
-      return;
-    }
-
-    const normalizedOrigin = origin.replace(/\/$/, '');
-
-    if (allowedOrigins.has(normalizedOrigin)) {
-      callback(null, true);
-      return;
-    }
-
-    callback(new Error('CORS not allowed'));
-  },
-  credentials: true
+  origin: [
+    'https://nextcomplyai.com',
+    'https://www.nextcomplyai.com',
+    'https://www.nextdoc.in',
+    'https://nextdoc.in',
+    'http://localhost:3000',
+    'http://localhost:5173'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
+
+// Body parsing middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
