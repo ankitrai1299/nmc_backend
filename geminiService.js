@@ -40,6 +40,10 @@ const withTimeout = (promise, ms, errorMsg) => {
   ]);
 };
 
+if (process.env.VERTEX_PROJECT_ID && process.env.VERTEX_LOCATION) {
+  getVertexAIClient();
+}
+
 const cleanJsonString = (text = "") => {
   return text
     .replace(/```json/gi, "")
@@ -176,12 +180,14 @@ export const analyzeWithGemini = async ({
     model: MODEL_NAME,
     generationConfig: {
       temperature: 0.0,
-      maxOutputTokens: 1500,
+      maxOutputTokens: 2048,
       topP: 0.95,
+      responseMimeType: "application/json"
     },
   });
-
-  const prompt = buildCompliancePrompt({
+        maxOutputTokens: 2048,
+        topP: 0.95,
+        responseMimeType: "application/json"
     inputType,
     category,
     analysisMode,
@@ -253,7 +259,7 @@ export const extractClaimsWithGemini = async (text) => {
     model: MODEL_NAME,
     generationConfig: {
       temperature: 0.0,
-      maxOutputTokens: 1500,
+        maxOutputTokens: 2048,
       topP: 0.9
     }
   });

@@ -15,7 +15,7 @@ const ALLOW_AUDIO_DOWNLOAD = !IS_PRODUCTION || AUDIO_DOWNLOAD_ENABLED;
 
 const AUDIO_TIMEOUT_MS = 2 * 60 * 1000;
 const TRANSCRIBE_TIMEOUT_MS = 3 * 60 * 1000;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 2;
 const BACKOFF_BASE_MS = 800;
 const BACKOFF_FACTOR = 2;
 const YTDL_EXTRACT_FAILURE = /could not extract functions/i;
@@ -51,12 +51,52 @@ const withTimeout = async (promise, timeoutMs, timeoutMessage) => {
 };
 
 const retryWithBackoff = async (fn, attempts, label) => {
-  try {
-    return await fn();
-  } catch (error) {
-    console.warn(`[YouTube Transcript] ${label} failed:`, error.message);
-    throw error;
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      console.warn(`[YouTube Transcript] ${label} failed (attempt ${attempt}/${attempts}):`, error.message);
+      if (attempt < attempts) {
+        const backoffMs = BACKOFF_BASE_MS * (BACKOFF_FACTOR ** (attempt - 1));
+        await sleep(backoffMs);
+      }
+    }
   }
+  throw lastError;
+};
+
+const fetchYtDlpMetadata = async (videoUrl) => {
+  return await withTimeout(new Promise((resolve, reject) => {
+    const args = ['--dump-json', '--skip-download', videoUrl];
+    const process = spawn(getYtDlpCommand(), args);
+
+    let stdout = '';
+    let stderr = '';
+
+    process.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    process.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    process.on('error', reject);
+    process.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`yt-dlp metadata failed (code ${code}): ${stderr.trim()}`));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout.trim());
+        resolve(parsed);
+      } catch (error) {
+        reject(new Error('yt-dlp metadata returned invalid JSON'));
+      }
+    });
+  }), AUDIO_TIMEOUT_MS, 'yt-dlp metadata timed out');
 };
 
 const normalizeUrl = (videoUrl) => {
@@ -263,7 +303,12 @@ export const transcribeAudioWithOpenAI = async (filePath) => {
 
 export const getYoutubeTranscript = async (videoUrl) => {
   const normalized = normalizeUrl(videoUrl);
-  await validateYoutubeUrl(normalized);
+
+  try {
+    await validateYoutubeUrl(normalized);
+  } catch (error) {
+    console.warn('[YouTube Transcript] URL validation failed:', error.message);
+  }
 
   console.log('[YouTube Transcript] Trying captions...');
   try {
@@ -276,32 +321,42 @@ export const getYoutubeTranscript = async (videoUrl) => {
     console.warn('[YouTube Transcript] Captions failed:', error.message);
   }
 
-  // In production, do NOT download audio - return metadata only
-  if (!ALLOW_AUDIO_DOWNLOAD) {
-    console.log('[YouTube Transcript] Audio download disabled in production. Fetching metadata...');
-    try {
-      const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`);
-      if (response.ok) {
-        const data = await response.json();
-        return `YouTube video transcript unavailable. Title: ${data.title || 'Unknown'}. Channel: ${data.author_name || 'Unknown'}. URL: ${normalized}`;
-      }
-    } catch (err) {
-      console.warn('[YouTube Transcript] Metadata fetch failed:', err.message);
-    }
-    return `YouTube transcript unavailable. Video URL: ${normalized}. Please provide a summary or upload a file.`;
+  console.log('[YouTube Transcript] Captions unavailable. Fetching metadata...');
+  try {
+    const metadata = await retryWithBackoff(() => fetchYtDlpMetadata(normalized), MAX_RETRIES, 'yt-dlp metadata');
+    const title = metadata?.title || 'Unknown';
+    const description = metadata?.description || 'Description unavailable.';
+    return `YouTube video transcript unavailable. Title: ${title}. Description: ${description}. URL: ${normalized}`;
+  } catch (error) {
+    console.warn('[YouTube Transcript] yt-dlp metadata failed:', error.message);
   }
 
-  // Audio download only in development or when explicitly enabled
-  const tempFile = path.join(os.tmpdir(), `yt-audio-${Date.now()}.mp3`);
   try {
-    await retryWithBackoff(() => downloadYoutubeAudio(normalized, tempFile), MAX_RETRIES, 'Audio download');
-    return await transcribeAudioWithOpenAI(tempFile);
+    const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(normalized)}&format=json`);
+    if (response.ok) {
+      const data = await response.json();
+      const title = data?.title || 'Unknown';
+      const channel = data?.author_name || 'Unknown';
+      return `YouTube video transcript unavailable. Title: ${title}. Channel: ${channel}. URL: ${normalized}`;
+    }
   } catch (error) {
-    console.warn('[YouTube Transcript] Audio transcription failed:', error.message);
-    return `YouTube transcript unavailable. Reason: ${error.message}. Video URL: ${normalized}`;
-  } finally {
-    fs.unlink(tempFile, () => undefined);
+    console.warn('[YouTube Transcript] oEmbed metadata failed:', error.message);
   }
+
+  // Audio download only as last resort
+  if (ALLOW_AUDIO_DOWNLOAD) {
+    const tempFile = path.join(os.tmpdir(), `yt-audio-${Date.now()}.mp3`);
+    try {
+      await retryWithBackoff(() => downloadYoutubeAudio(normalized, tempFile), MAX_RETRIES, 'Audio download');
+      return await transcribeAudioWithOpenAI(tempFile);
+    } catch (error) {
+      console.warn('[YouTube Transcript] Audio transcription failed:', error.message);
+    } finally {
+      fs.unlink(tempFile, () => undefined);
+    }
+  }
+
+  return `YouTube transcript unavailable. Video URL: ${normalized}. Please provide a summary or upload a file.`;
 };
 
 export default {

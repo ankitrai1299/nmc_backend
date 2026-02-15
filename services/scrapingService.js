@@ -311,7 +311,7 @@ const fetchPuppeteerArticleText = async (url) => {
     await page.setViewport({ width: 1366, height: 768 });
     page.setDefaultNavigationTimeout(PUPPETEER_TIMEOUT);
 
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: PUPPETEER_TIMEOUT });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: PUPPETEER_TIMEOUT });
     await page.waitForSelector('body', { timeout: 15000 });
     await sleep(1200);
 
@@ -343,9 +343,9 @@ export const extractBlogContentByMethod = async (url, method) => {
     return { extractedText: text, extractionMethod: method };
   }
 
-  if (method === 'mercury') {
-    const text = await fetchMercuryRawText(url);
-    if (!text.trim()) throw new Error('Mercury Parser returned empty content');
+  if (method === 'readability') {
+    const text = await fetchReadableWithAxios(url);
+    if (!text.trim()) throw new Error('Readability returned empty content');
     return { extractedText: text, extractionMethod: method };
   }
 
@@ -543,8 +543,8 @@ export const scrapeUrl = async (url) => {
       });
 
       const response = await page.goto(url, {
-        waitUntil: 'networkidle2',
-        timeout: REQUEST_TIMEOUT
+        waitUntil: 'domcontentloaded',
+        timeout: PUPPETEER_TIMEOUT
       });
 
       if (!response) {

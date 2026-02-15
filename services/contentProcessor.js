@@ -15,7 +15,8 @@ import { extractTextFromImage } from './ocrService.js';
 import { buildAuditInput } from './auditInputBuilder.ts';
 
 const MAX_TEXT_LENGTH = 100000;
-const MAX_CONTENT_FOR_AI = 10000;
+const MAX_CONTENT_FOR_AI = 12000;
+const MAX_BLOG_CONTENT = 12000;
 const MAX_MEDIA_SIZE = 100 * 1024 * 1024;
 const REQUEST_TIMEOUT = 60000;
 const USER_AGENTS = [
@@ -523,7 +524,7 @@ const processUrl = async ({ url, category, analysisMode, country, region, rules 
     });
   }
 
-  const extractionPlan = ['jina_reader', 'mercury', 'puppeteer'];
+  const extractionPlan = ['jina_reader', 'readability', 'puppeteer'];
   let lastError;
 
   for (const method of extractionPlan) {
@@ -543,19 +544,19 @@ const processUrl = async ({ url, category, analysisMode, country, region, rules 
       }
 
       if (!auditInputResult.validationResult.isValid) {
-        console.warn('[Pipeline] Content validation failed', JSON.stringify({ reasons: auditInputResult.validationResult.reasons }));
-        lastError = new Error(`Content validation failed: ${auditInputResult.validationResult.reasons.join(', ')}`);
-        continue;
+        console.warn('[Pipeline] Content validation warnings', JSON.stringify({ reasons: auditInputResult.validationResult.reasons }));
       }
 
-      if (auditInputResult.cleanedContent.length < 2000) {
+      if (auditInputResult.cleanedContent.length < 300) {
         console.warn('[Pipeline] Content too short after cleaning', JSON.stringify({ length: auditInputResult.cleanedContent.length }));
         lastError = new Error('Content too short after cleaning');
         continue;
       }
 
+      const truncatedAuditText = truncateForAI(auditInputResult.auditInput.textContent);
+
       const auditResult = await analyzeWithGemini({
-        content: auditInputResult.auditInput.textContent,
+        content: truncatedAuditText,
         inputType: 'article',
         category,
         analysisMode,

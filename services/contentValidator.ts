@@ -8,9 +8,9 @@ export type ValidationResult = {
   reasons: string[];
 };
 
-const MIN_CONTENT_CHARS = 3000;
-const MIN_WORDS = 450;
-const HEADING_RATIO_THRESHOLD = 0.6;
+const MIN_CONTENT_CHARS = 300;
+const MIN_WORDS = 50;
+const HEADING_RATIO_THRESHOLD = 0.7;
 
 const getLineStats = (text: string) => {
   const lines = text
