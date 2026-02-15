@@ -75,8 +75,13 @@ const readRulesFromDir = (dirPath) => {
 };
 
 export const getRulesMetadata = () => {
+  const industries = Object.keys(CATEGORY_TO_SLUG).map((label) => ({
+    id: CATEGORY_TO_SLUG[label],
+    label
+  }));
+
   if (!fs.existsSync(RULES_ROOT)) {
-    return { countries: [] };
+    return { countries: [], industries };
   }
 
   const countryDirs = fs.readdirSync(RULES_ROOT, { withFileTypes: true })
@@ -99,7 +104,7 @@ export const getRulesMetadata = () => {
     return { id: slug, label: COUNTRY_LABELS[slug] || slugToLabel(slug), regions: [] };
   });
 
-  return { countries };
+  return { countries, industries };
 };
 
 export const getRulesForSelection = ({ country, region, category }) => {

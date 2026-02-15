@@ -8,6 +8,7 @@ const router = express.Router();
 router.get('/rules/metadata', authMiddleware, (req, res) => {
   try {
     const metadata = getRulesMetadata();
+    console.log('[Rules] Metadata countries count:', Array.isArray(metadata.countries) ? metadata.countries.length : 0);
     return res.json({ ok: true, data: metadata });
   } catch (error) {
     console.error('[Rules] Metadata error:', error);
