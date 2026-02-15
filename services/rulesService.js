@@ -3,7 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const RULES_ROOT = path.resolve(__dirname, '../../frontend/rules/rules');
+const RULES_ROOT = path.resolve(__dirname, '../../frontend/rules');
+const RULES_SUBDIR = 'rules';
 
 const COUNTRY_TO_SLUG = {
   India: 'india',
@@ -84,13 +85,16 @@ export const getRulesMetadata = () => {
     return { countries: [], industries };
   }
 
-  const countryDirs = fs.readdirSync(RULES_ROOT, { withFileTypes: true })
+  const nestedRulesRoot = path.join(RULES_ROOT, RULES_SUBDIR);
+  const scanRoot = fs.existsSync(nestedRulesRoot) ? nestedRulesRoot : RULES_ROOT;
+
+  const countryDirs = fs.readdirSync(scanRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
 
   const countries = countryDirs.map((slug) => {
     if (slug === 'gcc') {
-      const gccPath = path.join(RULES_ROOT, 'gcc');
+      const gccPath = path.join(scanRoot, 'gcc');
       const regionDirs = fs.readdirSync(gccPath, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => ({
@@ -113,12 +117,15 @@ export const getRulesForSelection = ({ country, region, category }) => {
 
   if (!countrySlug) return [];
 
-  let basePath = path.join(RULES_ROOT, countrySlug);
+  const nestedRulesRoot = path.join(RULES_ROOT, RULES_SUBDIR);
+  const scanRoot = fs.existsSync(nestedRulesRoot) ? nestedRulesRoot : RULES_ROOT;
+
+  let basePath = path.join(scanRoot, countrySlug);
 
   if (countrySlug === 'gcc') {
     const regionSlug = GCC_REGION_TO_SLUG[region] || (region || '').toLowerCase();
     if (!regionSlug) return [];
-    basePath = path.join(RULES_ROOT, 'gcc', regionSlug);
+    basePath = path.join(scanRoot, 'gcc', regionSlug);
   }
 
   if (!fs.existsSync(basePath)) return [];
