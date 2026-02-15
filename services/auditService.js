@@ -1,4 +1,5 @@
 import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleAuth } from 'google-auth-library';
 import { selectGeminiModel, getFallbackModel, getGenerationConfig, isComplexContent } from './modelRouter.js';
 import { extractClaims, shouldExtractClaims } from './claimsExtractor.js';
 
@@ -13,16 +14,22 @@ import { extractClaims, shouldExtractClaims } from './claimsExtractor.js';
 // Reuse AI client instances
 let vertexAIClient = null;
 
-const getVertexCredentials = () => {
+const getVertexAuth = () => {
   const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
   if (!rawCredentials) {
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
   }
+  let credentials;
   try {
-    return JSON.parse(rawCredentials);
+    credentials = JSON.parse(rawCredentials);
   } catch (error) {
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON');
   }
+
+  return new GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/cloud-platform']
+  });
 };
 
 /**
@@ -32,7 +39,7 @@ const getVertexCredentials = () => {
 const getVertexAIClient = () => {
   if (!vertexAIClient) {
     const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;
-    const credentials = getVertexCredentials();
+    const auth = getVertexAuth();
     // Always use us-central1 region
     const location = 'us-central1';
     
@@ -43,7 +50,7 @@ const getVertexAIClient = () => {
     vertexAIClient = new VertexAI({ 
       project: projectId, 
       location: location,
-      credentials
+      auth
     });
     
     console.log('[Audit Service] Vertex AI client initialized | Region: us-central1 | Model: gemini-2.0-flash');

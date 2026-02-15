@@ -1,4 +1,5 @@
 import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleAuth } from 'google-auth-library';
 import { cleanArticleContent } from './contentCleaner.ts';
 import { detectContentMetadata } from './metadataDetector.ts';
 import { enforceContentLossGuard, validateExtractedContent } from './contentValidator.ts';
@@ -9,16 +10,22 @@ const TRANSLATION_MODEL = 'gemini-2.5-flash';
 
 let translationClient: VertexAI | null = null;
 
-const getVertexCredentials = () => {
+const getVertexAuth = () => {
   const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
   if (!rawCredentials) {
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
   }
+  let credentials;
   try {
-    return JSON.parse(rawCredentials);
+    credentials = JSON.parse(rawCredentials);
   } catch (error) {
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON');
   }
+
+  return new GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/cloud-platform']
+  });
 };
 
 const getTranslationClient = () => {
@@ -27,11 +34,11 @@ const getTranslationClient = () => {
     if (!projectId) {
       throw new Error('VERTEX_AI_PROJECT_ID missing for translation');
     }
-    const credentials = getVertexCredentials();
+    const auth = getVertexAuth();
     translationClient = new VertexAI({
       project: projectId,
       location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'asia-southeast1',
-      credentials
+      auth
     });
   }
   return translationClient;

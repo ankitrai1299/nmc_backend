@@ -1,20 +1,27 @@
 import { VertexAI } from "@google-cloud/vertexai";
+import { GoogleAuth } from "google-auth-library";
 
 /* ===============================
    CONFIG
 ================================ */
 const MODEL_NAME = "gemini-2.5-flash";
 
-const getVertexCredentials = () => {
+const getVertexAuth = () => {
   const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
   if (!rawCredentials) {
     throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON is not set");
   }
+  let credentials;
   try {
-    return JSON.parse(rawCredentials);
+    credentials = JSON.parse(rawCredentials);
   } catch (error) {
     throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON");
   }
+
+  return new GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/cloud-platform"]
+  });
 };
 
 const cleanJsonString = (text = "") => {
@@ -154,12 +161,12 @@ export const analyzeWithGemini = async ({
   if (!location) {
     throw new Error("VERTEX_LOCATION missing");
   }
-  const credentials = getVertexCredentials();
+  const auth = getVertexAuth();
 
   const vertexAI = new VertexAI({
     project: projectId,
     location: location,
-    credentials
+    auth
   });
   console.log("Vertex initialized with env credentials");
 
@@ -229,7 +236,7 @@ export const analyzeWithGemini = async ({
    OPTIONAL: AUDIO SUMMARY
 ================================ */
 export const generateAudioSummary = async (text) => {
-  const credentials = getVertexCredentials();
+  const auth = getVertexAuth();
   const projectId = process.env.VERTEX_PROJECT_ID;
   const location = process.env.VERTEX_LOCATION;
   if (!projectId) {
@@ -241,7 +248,7 @@ export const generateAudioSummary = async (text) => {
   const vertexAI = new VertexAI({
     project: projectId,
     location: location,
-    credentials
+    auth
   });
   console.log("Vertex initialized with env credentials");
 
@@ -272,7 +279,7 @@ export const extractClaimsWithGemini = async (text) => {
   if (!location) {
     throw new Error('VERTEX_LOCATION missing');
   }
-  const credentials = getVertexCredentials();
+  const auth = getVertexAuth();
 
   const cleaned = (text || '').trim();
   if (!cleaned) {
@@ -282,7 +289,7 @@ export const extractClaimsWithGemini = async (text) => {
   const vertexAI = new VertexAI({
     project: projectId,
     location: location,
-    credentials
+    auth
   });
   console.log("Vertex initialized with env credentials");
 

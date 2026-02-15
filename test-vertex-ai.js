@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import dotenv from 'dotenv';
+import { GoogleAuth } from 'google-auth-library';
 
 // Load environment variables
 dotenv.config();
@@ -25,10 +26,14 @@ try {
   }
 
   const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  const auth = new GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/cloud-platform']
+  });
   const vertexAI = new VertexAI({
     project: process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID,
     location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'asia-southeast1',
-    credentials
+    auth
   });
   console.log('[Test] ✓ VertexAI initialized');
   

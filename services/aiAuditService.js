@@ -1,4 +1,5 @@
 import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleAuth } from 'google-auth-library';
 import { getModelForScanType, getGenerationConfig } from './modelRouter.js';
 
 /**
@@ -13,16 +14,22 @@ import { getModelForScanType, getGenerationConfig } from './modelRouter.js';
 // Reuse AI client instances
 let vertexAIClient = null;
 
-const getVertexCredentials = () => {
+const getVertexAuth = () => {
   const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
   if (!rawCredentials) {
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
   }
+  let credentials;
   try {
-    return JSON.parse(rawCredentials);
+    credentials = JSON.parse(rawCredentials);
   } catch (error) {
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON');
   }
+
+  return new GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/cloud-platform']
+  });
 };
 
 /**
@@ -33,7 +40,7 @@ const getVertexAIClient = () => {
   if (!vertexAIClient) {
     const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;
     const location = process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || process.env.GOOGLE_VERTEX_LOCATION || 'us-central1';
-    const credentials = getVertexCredentials();
+    const auth = getVertexAuth();
     
     if (!projectId) {
       throw new Error('GOOGLE_VERTEX_PROJECT or VERTEX_AI_PROJECT_ID is not set');
@@ -42,7 +49,7 @@ const getVertexAIClient = () => {
     vertexAIClient = new VertexAI({ 
       project: projectId, 
       location: location,
-      credentials
+      auth
     });
     
     console.log('[AI Audit] Vertex AI client initialized');
