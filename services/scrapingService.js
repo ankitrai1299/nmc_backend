@@ -285,11 +285,7 @@ const fetchPuppeteerArticleText = async (url) => {
   console.log('[Puppeteer + Readability] Extracting article from:', url);
 
   const userAgent = getRandomUserAgent();
-  const browser = await puppeteer.launch({
-    args: chromium.args,
-    executablePath: await chromium.executablePath(),
-    headless: true,
-  });
+  const browser = await launchBrowser();
 
   try {
     const page = await browser.newPage();
@@ -326,6 +322,26 @@ const fetchPuppeteerArticleText = async (url) => {
   }
 };
 
+// Production-safe Puppeteer launch for Render (no GPU, low RAM)
+export async function launchBrowser() {
+  if (process.env.ENABLE_PUPPETEER !== 'true') {
+    throw new Error('Puppeteer is disabled in this environment');
+  }
+  return puppeteer.launch({
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--no-zygote',
+      '--single-process',
+      ...chromium.args
+    ],
+    executablePath: await chromium.executablePath(),
+    headless: true,
+  });
+}
 export const extractBlogContentByMethod = async (url, method) => {
   if (method === 'jina_reader') {
     const text = await fetchJinaReaderRawText(url);
