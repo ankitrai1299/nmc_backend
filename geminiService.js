@@ -146,17 +146,22 @@ export const analyzeWithGemini = async ({
   rules = [],
   contentContext = ''
 }) => {
-  const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID;
+  const projectId = process.env.VERTEX_PROJECT_ID;
+  const location = process.env.VERTEX_LOCATION;
   if (!projectId) {
-    throw new Error("VERTEX_AI_PROJECT_ID missing");
+    throw new Error("VERTEX_PROJECT_ID missing");
+  }
+  if (!location) {
+    throw new Error("VERTEX_LOCATION missing");
   }
   const credentials = getVertexCredentials();
 
   const vertexAI = new VertexAI({
     project: projectId,
-    location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+    location: location,
     credentials
   });
+  console.log("Vertex initialized with env credentials");
 
   const model = vertexAI.getGenerativeModel({
     model: MODEL_NAME,
@@ -225,11 +230,20 @@ export const analyzeWithGemini = async ({
 ================================ */
 export const generateAudioSummary = async (text) => {
   const credentials = getVertexCredentials();
+  const projectId = process.env.VERTEX_PROJECT_ID;
+  const location = process.env.VERTEX_LOCATION;
+  if (!projectId) {
+    throw new Error("VERTEX_PROJECT_ID missing");
+  }
+  if (!location) {
+    throw new Error("VERTEX_LOCATION missing");
+  }
   const vertexAI = new VertexAI({
-    project: process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID,
-    location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+    project: projectId,
+    location: location,
     credentials
   });
+  console.log("Vertex initialized with env credentials");
 
   const ttsModel = vertexAI.getGenerativeModel({
     model: "gemini-2.5-flash-preview-tts",
@@ -250,9 +264,13 @@ export const generateAudioSummary = async (text) => {
 };
 
 export const extractClaimsWithGemini = async (text) => {
-  const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID;
+  const projectId = process.env.VERTEX_PROJECT_ID;
+  const location = process.env.VERTEX_LOCATION;
   if (!projectId) {
-    throw new Error('VERTEX_AI_PROJECT_ID missing');
+    throw new Error('VERTEX_PROJECT_ID missing');
+  }
+  if (!location) {
+    throw new Error('VERTEX_LOCATION missing');
   }
   const credentials = getVertexCredentials();
 
@@ -263,9 +281,10 @@ export const extractClaimsWithGemini = async (text) => {
 
   const vertexAI = new VertexAI({
     project: projectId,
-    location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'asia-southeast1',
+    location: location,
     credentials
   });
+  console.log("Vertex initialized with env credentials");
 
   const model = vertexAI.getGenerativeModel({
     model: MODEL_NAME,
