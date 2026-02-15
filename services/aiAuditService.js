@@ -16,20 +16,28 @@ let vertexAIClient = null;
 
 const getVertexAuth = () => {
   const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  console.log('[AI Audit] Raw credentials length:', rawCredentials?.length);
+  
   if (!rawCredentials) {
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
   }
   let credentials;
   try {
     credentials = JSON.parse(rawCredentials);
+    console.log('[AI Audit] Parsed credentials project_id:', credentials.project_id);
+    console.log('[AI Audit] Parsed credentials client_email:', credentials.client_email);
   } catch (error) {
+    console.error('[AI Audit] JSON parse error:', error.message);
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON');
   }
 
-  return new GoogleAuth({
+  const auth = new GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/cloud-platform']
   });
+  console.log('[AI Audit] GoogleAuth client created successfully');
+  
+  return auth;
 };
 
 /**
@@ -40,6 +48,11 @@ const getVertexAIClient = () => {
   if (!vertexAIClient) {
     const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;
     const location = process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || process.env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+    
+    console.log('[AI Audit] Initializing Vertex AI client...');
+    console.log('[AI Audit] Project ID:', projectId);
+    console.log('[AI Audit] Location:', location);
+    
     const auth = getVertexAuth();
     
     if (!projectId) {
@@ -52,7 +65,7 @@ const getVertexAIClient = () => {
       auth
     });
     
-    console.log('[AI Audit] Vertex AI client initialized');
+    console.log('[AI Audit] ✓ Vertex AI client initialized with explicit auth');
   }
   
   return vertexAIClient;

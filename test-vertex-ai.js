@@ -25,17 +25,25 @@ try {
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
   }
 
-  const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  console.log('[Test] Raw credentials length:', rawCredentials?.length);
+  
+  const credentials = JSON.parse(rawCredentials);
+  console.log('[Test] Parsed credentials project_id:', credentials.project_id);
+  console.log('[Test] Parsed credentials client_email:', credentials.client_email);
+  
   const auth = new GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/cloud-platform']
   });
+  console.log('[Test] GoogleAuth client created successfully');
+  
   const vertexAI = new VertexAI({
     project: process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID,
     location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'asia-southeast1',
     auth
   });
-  console.log('[Test] ✓ VertexAI initialized');
+  console.log('[Test] ✓ VertexAI initialized with explicit auth');
   
   console.log('[Test] Getting generative model...');
   const model = vertexAI.getGenerativeModel({
