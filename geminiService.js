@@ -185,9 +185,8 @@ export const analyzeWithGemini = async ({
       responseMimeType: "application/json"
     },
   });
-        maxOutputTokens: 2048,
-        top:0.95,
-        responseMimeType: "application/json"
+
+  const prompt = buildCompliancePrompt({
     inputType,
     category,
     analysisMode,
@@ -259,7 +258,7 @@ export const extractClaimsWithGemini = async (text) => {
     model: MODEL_NAME,
     generationConfig: {
       temperature: 0.0,
-        maxOutputTokens: 2048,
+      maxOutputTokens: 2048,
       topP: 0.9
     }
   });
