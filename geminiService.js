@@ -186,7 +186,7 @@ export const analyzeWithGemini = async ({
     },
   });
         maxOutputTokens: 2048,
-        topP: 0.95,
+        top: 0.95,
         responseMimeType: "application/json"
     inputType,
     category,
