@@ -4,5 +4,3 @@ node_modules/
 *.log
 uploads/
 *.json
-service-account.json
-satark-ai-486508-18a7a7906136.json

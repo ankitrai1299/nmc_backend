@@ -13,6 +13,7 @@ console.log('[Server] Auth routes imported:', authRoutes ? '✅' : '❌');
 
 // Load environment variables
 dotenv.config();
+console.log("Vertex using env credentials:", !!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
 
 // Validate required environment variables
 const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;
