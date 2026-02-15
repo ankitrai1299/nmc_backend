@@ -81,8 +81,17 @@ export const getRulesMetadata = () => {
     label
   }));
 
+  const defaultCountries = [
+    { id: 'india', label: 'India' },
+    { id: 'usa', label: 'United States' },
+    { id: 'canada', label: 'Canada' },
+    { id: 'australia', label: 'Australia' },
+    { id: 'gcc', label: 'GCC' },
+    { id: 'new_zealand', label: 'New Zealand' }
+  ];
+
   if (!fs.existsSync(RULES_ROOT)) {
-    return { countries: [], industries };
+    return { countries: defaultCountries, industries };
   }
 
   const nestedRulesRoot = path.join(RULES_ROOT, RULES_SUBDIR);
@@ -91,6 +100,10 @@ export const getRulesMetadata = () => {
   const countryDirs = fs.readdirSync(scanRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
+
+  if (countryDirs.length === 0) {
+    return { countries: defaultCountries, industries };
+  }
 
   const countries = countryDirs.map((slug) => {
     if (slug === 'gcc') {
