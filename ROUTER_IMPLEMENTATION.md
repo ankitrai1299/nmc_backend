@@ -161,7 +161,7 @@ All errors return:
 
 ```env
 # OpenAI - For transcription only
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 
 # Gemini/Vertex AI - For compliance analysis
 GOOGLE_VERTEX_PROJECT=your-project-id
@@ -216,3 +216,4 @@ curl -X POST http://localhost:3001/api/audit \
 3. Test with various content types
 4. Monitor logs for model selection patterns
 5. Optimize thresholds based on usage
+

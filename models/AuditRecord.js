@@ -8,7 +8,7 @@ const AuditRecordSchema = new mongoose.Schema({
   },
   contentType: {
     type: String,
-    enum: ['text', 'url', 'webpage', 'image', 'video', 'audio'],
+    enum: ['text', 'url', 'webpage', 'image', 'video', 'audio', 'document'],
     required: true
   },
   originalInput: {

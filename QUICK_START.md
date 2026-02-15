@@ -109,3 +109,4 @@ curl http://localhost:3001/api/history?limit=10
 - Check file size (max 100MB)
 - Verify file type is supported
 - Ensure proper Content-Type header
+

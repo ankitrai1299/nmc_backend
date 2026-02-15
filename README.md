@@ -1,4 +1,4 @@
-# Satark AI Compliance Auditor - Backend
+# NEXTCOMPLY AI Compliance Auditor - Backend
 
 Production-ready Node.js + Express + MongoDB + Vertex AI backend for healthcare advertisement compliance auditing.
 
@@ -52,7 +52,7 @@ Create a `.env` file in the `server/` directory:
 MONGODB_URI=mongodb://localhost:27017/satark-ai-compliance
 
 # OpenAI Configuration (for transcription ONLY)
-OPENAI_API_KEY=sk-your-openai-api-key
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 
 # Google Vertex AI Configuration (for compliance analysis ONLY)
 GOOGLE_VERTEX_PROJECT=your-project-id
@@ -302,4 +302,5 @@ The backend follows a modular architecture:
 
 ## License
 
-Proprietary - Satark AI Compliance Auditor
+Proprietary - NEXTCOMPLY AI Compliance Auditor
+

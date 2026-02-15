@@ -55,7 +55,7 @@ The server will:
 ### Example Output
 
 ```
-🚀 Satark AI Compliance Auditor Backend
+🚀 NEXTCOMPLY AI Compliance Auditor Backend
 ==========================================
 📍 Server running on port 3002
 ⚠️  Note: Port 3001 was busy, using port 3002 instead
@@ -102,3 +102,4 @@ The server will try to use 3005, but will automatically use the next available p
 - Timeout: 800ms per port check (frontend)
 - Global variable `SELECTED_PORT` stores the chosen port
 - Both endpoints (`/health` and `/api/port`) are available immediately
+

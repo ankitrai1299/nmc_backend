@@ -64,7 +64,7 @@
 
 Once the server starts, you should see:
 ```
-🚀 Satark AI Compliance Auditor Backend
+🚀 NEXTCOMPLY AI Compliance Auditor Backend
 ==========================================
 📍 Server running on port 3001
 📍 Backend URL: http://localhost:3001
@@ -83,3 +83,4 @@ curl -X POST http://localhost:3001/api/analyze \
   -H "Content-Type: application/json" \
   -d '{"content":"Test text","inputType":"Text","category":"Pharmaceuticals"}'
 ```
+

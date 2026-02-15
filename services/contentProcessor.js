@@ -1,4 +1,4 @@
-import { scrapeUrl, extractReadableFromUrl, extractMetadataFromUrl } from './scrapingService.js';
+import { scrapeUrl, extractReadableFromUrl, extractMetadataFromUrl, extractBlogContentByMethod } from './scrapingService.js';
 import { transcribe } from './transcriptionService.js';
 import { performAudit, performMultimodalAudit } from './auditService.js';
 import fs from 'fs';
@@ -6,9 +6,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { YoutubeTranscript } from 'youtube-transcript';
 import OpenAI from 'openai';
-import { analyzeWithGemini } from '../geminiService.js';
+import { analyzeWithGemini, extractClaimsWithGemini } from '../geminiService.js';
+import { extractTextFromDocument } from './documentService.js';
+import { getYoutubeTranscript } from './youtubeTranscriptService.js';
+import { getRulesForSelection } from './rulesService.js';
 import AuditRecord from '../models/AuditRecord.js';
 import { extractTextFromImage } from './ocrService.js';
+import { buildAuditInput } from './auditInputBuilder.ts';
 
 const MAX_TEXT_LENGTH = 100000;
 const MAX_MEDIA_SIZE = 100 * 1024 * 1024;
@@ -56,6 +60,9 @@ export const detectContentType = (input) => {
     if (mimetype.startsWith('image/')) return 'image';
     if (mimetype.startsWith('video/')) return 'video';
     if (mimetype.startsWith('audio/')) return 'audio';
+    if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'document';
+    if (mimetype === 'application/msword') return 'document';
+    if (mimetype === 'application/pdf') return 'document';
   }
   throw new Error('Unable to detect content type');
 };
@@ -250,32 +257,83 @@ const analyzeUrlWithOpenAI = async (url) => {
   }
 };
 
-const validateGeminiResult = (result) => {
-  const requiredKeys = [
-    'score',
-    'status',
-    'summary',
-    'transcription',
-    'financialPenalty',
-    'ethicalMarketing',
-    'violations'
+const scanDocumentWithOpenAI = async (text) => {
+  const normalized = (text || '').trim();
+  const placeholderPatterns = [
+    /no selectable text/i,
+    /no readable text/i,
+    /scanned document/i,
+    /please upload a text-based/i
   ];
 
+  if (!normalized || normalized.length < 200 || placeholderPatterns.some((pattern) => pattern.test(normalized))) {
+    console.warn('[Document Scan] Skipping OpenAI scan: insufficient or placeholder text');
+    return '';
+  }
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await delay(400, 900);
+      const openai = getOpenAIClient();
+      const response = await openai.responses.create({
+        model: 'gpt-4o-mini',
+        input: `Extract the key marketing, medical, and compliance-relevant claims from this document. Return plain text only.\n\n${normalized.substring(0, 12000)}`,
+        temperature: 0.2
+      });
+
+      const scanned = response.output_text?.trim() || '';
+      if (!scanned || scanned.length < 200) {
+        throw new Error('OpenAI document scan returned empty or too-short content');
+      }
+
+      console.log('[Document Scan] OpenAI scan succeeded.');
+      return scanned;
+    } catch (error) {
+      console.warn('[Document Scan] OpenAI scan failed:', error.message);
+      if (attempt < 2) {
+        const backoffMs = 600 * attempt;
+        console.log(`[Document Scan] Retrying in ${backoffMs}ms...`);
+        await delay(backoffMs, backoffMs + 200);
+        continue;
+      }
+      return '';
+    }
+  }
+
+  return '';
+};
+
+
+const normalizeGeminiResult = (result) => {
   if (!result || typeof result !== 'object') {
-    console.error('[Content Processor] Invalid Gemini JSON:', result);
     throw new Error('Gemini returned invalid JSON');
   }
 
-  const missing = requiredKeys.filter((key) => !(key in result));
-  if (missing.length > 0) {
-    console.error('[Content Processor] Invalid Gemini JSON:', JSON.stringify(result));
-    throw new Error('Gemini returned invalid JSON');
-  }
+  const normalizeScore = (value) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return 0;
+    }
+    if (value <= 1) {
+      return Math.round(value * 100);
+    }
+    return Math.max(0, Math.min(100, Math.round(value)));
+  };
 
-  if (!Array.isArray(result.violations)) {
-    console.error('[Content Processor] Invalid Gemini JSON:', JSON.stringify(result));
-    throw new Error('Gemini returned invalid JSON');
-  }
+  return {
+    score: normalizeScore(result.score),
+    status: result.status || 'Needs Review',
+    summary: result.summary || 'Summary unavailable.',
+    transcription: result.transcription || '',
+    financialPenalty: result.financialPenalty || {
+      riskLevel: 'Low',
+      description: 'No financial risk assessment available.'
+    },
+    ethicalMarketing: result.ethicalMarketing || {
+      score: normalizeScore(result?.ethicalMarketing?.score),
+      assessment: 'Ethical marketing assessment unavailable.'
+    },
+    violations: Array.isArray(result.violations) ? result.violations : []
+  };
 };
 
 const saveAuditRecord = async ({
@@ -286,7 +344,7 @@ const saveAuditRecord = async ({
   transcript,
   auditResult
 }) => {
-  validateGeminiResult(auditResult);
+  const normalizedResult = normalizeGeminiResult(auditResult);
 
   const record = new AuditRecord({
     userId,
@@ -294,21 +352,24 @@ const saveAuditRecord = async ({
     originalInput,
     extractedText,
     transcript,
-    auditResult
+    auditResult: normalizedResult
   });
 
   await record.save();
   return record;
 };
 
-const processText = async ({ text, category, analysisMode }) => {
+const processText = async ({ text, category, analysisMode, country, region, rules }) => {
   validateInputSize(text, 'text');
 
   const auditResult = await analyzeWithGemini({
     content: text,
     inputType: 'text',
     category,
-    analysisMode
+    analysisMode,
+    country,
+    region,
+    rules
   });
 
   return {
@@ -320,7 +381,7 @@ const processText = async ({ text, category, analysisMode }) => {
   };
 };
 
-const processMediaBuffer = async ({ buffer, mimetype, inputType, originalInput, category, analysisMode }) => {
+const processMediaBuffer = async ({ buffer, mimetype, inputType, originalInput, category, analysisMode, country, region, rules }) => {
   const transcriptionResult = await transcribe(buffer, mimetype);
   const transcriptText = transcriptionResult.transcript;
 
@@ -328,7 +389,10 @@ const processMediaBuffer = async ({ buffer, mimetype, inputType, originalInput, 
     content: transcriptText,
     inputType,
     category,
-    analysisMode
+    analysisMode,
+    country,
+    region,
+    rules
   });
 
   return {
@@ -340,7 +404,7 @@ const processMediaBuffer = async ({ buffer, mimetype, inputType, originalInput, 
   };
 };
 
-const processImageBuffer = async ({ buffer, originalInput, category, analysisMode }) => {
+const processImageBuffer = async ({ buffer, originalInput, category, analysisMode, country, region, rules }) => {
   const extractedText = await extractTextFromImage(buffer);
 
   if (!extractedText || !extractedText.trim()) {
@@ -351,7 +415,10 @@ const processImageBuffer = async ({ buffer, originalInput, category, analysisMod
     content: extractedText,
     inputType: 'image',
     category,
-    analysisMode
+    analysisMode,
+    country,
+    region,
+    rules
   });
 
   return {
@@ -363,15 +430,17 @@ const processImageBuffer = async ({ buffer, originalInput, category, analysisMod
   };
 };
 
-const processUrl = async ({ url, category, analysisMode }) => {
+const processUrl = async ({ url, category, analysisMode, country, region, rules }) => {
   const urlType = detectUrlContentType(url);
 
   if (isYouTubeUrl(url)) {
     let transcriptText = '';
     try {
-      transcriptText = await fetchYouTubeTranscript(url);
+      console.log('[YouTube Transcript] Captions -> Audio fallback flow enabled');
+      transcriptText = await getYoutubeTranscript(url);
+      console.log(`[YouTube Transcript] Transcript length: ${transcriptText.length} chars`);
     } catch (error) {
-      console.warn('[YouTube Transcript] Falling back to metadata:', error.message);
+      console.warn('[YouTube Transcript] Fallback to metadata after audio/transcript failure:', error.message);
       transcriptText = await fetchYouTubeFallbackText(url, error.message);
     }
 
@@ -379,7 +448,10 @@ const processUrl = async ({ url, category, analysisMode }) => {
       content: transcriptText,
       inputType: 'video',
       category,
-      analysisMode
+      analysisMode,
+      country,
+      region,
+      rules
     });
 
     return {
@@ -422,7 +494,10 @@ const processUrl = async ({ url, category, analysisMode }) => {
         content: extractedText,
         inputType: 'url',
         category,
-        analysisMode
+        analysisMode,
+        country,
+        region,
+        rules
       });
 
       return {
@@ -443,23 +518,103 @@ const processUrl = async ({ url, category, analysisMode }) => {
     });
   }
 
-  let extractedText = '';
-  try {
-    ({ extractedText } = await scrapeUrl(url));
-  } catch (error) {
-    console.warn('[Scraping] Falling back to placeholder text:', error.message);
-    extractedText = `Content could not be extracted due to access restrictions or timeouts. URL: ${url}. Please provide text or upload a file for review.`;
+  const extractionPlan = ['jina_reader', 'mercury', 'puppeteer'];
+  let lastError;
+
+  for (const method of extractionPlan) {
+    try {
+      const { extractedText, extractionMethod } = await extractBlogContentByMethod(url, method);
+      console.log('[Pipeline] Scraping completed', JSON.stringify({ method: extractionMethod, length: extractedText.length }));
+
+      const auditInputResult = await buildAuditInput({
+        rawContent: extractedText,
+        sourceType: 'blog',
+        contentFormat: 'article',
+        extractionMethod
+      });
+
+      if (auditInputResult.validationResult.warnings.length) {
+        console.warn('[Pipeline] Content warnings', JSON.stringify({ warnings: auditInputResult.validationResult.warnings }));
+      }
+
+      if (!auditInputResult.validationResult.isValid) {
+        console.warn('[Pipeline] Content validation failed', JSON.stringify({ reasons: auditInputResult.validationResult.reasons }));
+        lastError = new Error(`Content validation failed: ${auditInputResult.validationResult.reasons.join(', ')}`);
+        continue;
+      }
+
+      if (auditInputResult.cleanedContent.length < 2000) {
+        console.warn('[Pipeline] Content too short after cleaning', JSON.stringify({ length: auditInputResult.cleanedContent.length }));
+        lastError = new Error('Content too short after cleaning');
+        continue;
+      }
+
+      const auditResult = await analyzeWithGemini({
+        content: auditInputResult.auditInput.textContent,
+        inputType: 'article',
+        category,
+        analysisMode,
+        country,
+        region,
+        rules,
+        contentContext: 'Input is a written healthcare article, not a speech transcript.'
+      });
+
+      auditResult.metadata = auditInputResult.auditInput.metadata;
+
+      return {
+        contentType: 'webpage',
+        originalInput: url,
+        extractedText: auditInputResult.cleanedContent,
+        transcript: auditInputResult.cleanedContent,
+        auditResult
+      };
+    } catch (error) {
+      lastError = error;
+      console.warn('[Pipeline] Extraction attempt failed', JSON.stringify({ method, message: error.message }));
+    }
   }
+
+  throw new Error(`Blog content extraction failed: ${lastError?.message || 'Unknown error'}`);
+};
+
+const processDocumentBuffer = async ({ buffer, mimetype, originalInput, category, analysisMode, country, region, rules }) => {
+  let extractedText = await extractTextFromDocument(buffer, mimetype);
+
+  let scannedText = await scanDocumentWithOpenAI(extractedText);
+  if (!scannedText) {
+    try {
+      scannedText = await extractClaimsWithGemini(extractedText);
+      console.log('[Document Scan] Gemini claim extraction succeeded.');
+    } catch (error) {
+      console.warn('[Document Scan] Gemini claim extraction failed:', error.message);
+    }
+  }
+
+  if (scannedText && scannedText.length < 200) {
+    console.warn('[Document Scan] Claim extraction too short, falling back to full text.');
+    scannedText = '';
+  }
+
+  const auditText = scannedText || extractedText;
+
   const auditResult = await analyzeWithGemini({
-    content: extractedText,
-    inputType: 'url',
+    content: auditText,
+    inputType: 'document',
     category,
-    analysisMode
+    analysisMode,
+    country,
+    region,
+    rules
   });
 
+  if (!auditResult.transcription) {
+    auditResult.transcription = extractedText;
+  }
+
   return {
-    contentType: 'webpage',
-    originalInput: url,
+    contentType: 'document',
+    originalInput,
     extractedText,
     transcript: extractedText,
     auditResult
@@ -467,19 +622,20 @@ const processUrl = async ({ url, category, analysisMode }) => {
 };
 
 export const processContent = async (input, options = {}) => {
-  const { userId, category, analysisMode } = options;
+  const { userId, category, analysisMode, country, region } = options;
 
   if (!userId) {
     throw new Error('Authentication required');
   }
 
   const contentType = detectContentType(input);
+  const rules = getRulesForSelection({ country, region, category });
   let processingResult;
 
   if (contentType === 'text') {
-    processingResult = await processText({ text: input.text, category, analysisMode });
+    processingResult = await processText({ text: input.text, category, analysisMode, country, region, rules });
   } else if (contentType === 'url') {
-    processingResult = await processUrl({ url: input.url, category, analysisMode });
+    processingResult = await processUrl({ url: input.url, category, analysisMode, country, region, rules });
   } else if (contentType === 'video' || contentType === 'audio') {
     processingResult = await processMediaBuffer({
       buffer: input.file.buffer,
@@ -487,14 +643,31 @@ export const processContent = async (input, options = {}) => {
       inputType: contentType,
       originalInput: input.file.originalname || `uploaded ${contentType}`,
       category,
-      analysisMode
+      analysisMode,
+      country,
+      region,
+      rules
     });
   } else if (contentType === 'image') {
     processingResult = await processImageBuffer({
       buffer: input.file.buffer,
       originalInput: input.file.originalname || 'uploaded image',
       category,
-      analysisMode
+      analysisMode,
+      country,
+      region,
+      rules
+    });
+  } else if (contentType === 'document') {
+    processingResult = await processDocumentBuffer({
+      buffer: input.file.buffer,
+      mimetype: input.file.mimetype,
+      originalInput: input.file.originalname || 'uploaded document',
+      category,
+      analysisMode,
+      country,
+      region,
+      rules
     });
   } else {
     throw new Error('Unsupported input type');

@@ -18,7 +18,7 @@ import { processContent } from '../services/contentProcessor.js';
  */
 export const createAudit = async (req, res) => {
   try {
-    const { text, url, category, analysisMode } = req.body;
+    const { text, url, category, analysisMode, country, region } = req.body;
     const file = req.file;
     
     // Validate input
@@ -42,7 +42,9 @@ export const createAudit = async (req, res) => {
     const auditResult = await processContent(input, {
       userId: req.user?.id,
       category,
-      analysisMode
+      analysisMode,
+      country,
+      region
     });
 
     return res.status(201).json(auditResult);

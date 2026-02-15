@@ -93,7 +93,7 @@ When server starts successfully, you should see:
      - GET  /api/auth/health
      - POST /api/auth/signup
      - POST /api/auth/login
-🚀 Satark AI Backend server running on port 3001
+🚀 NEXTCOMPLY AI Backend server running on port 3001
 📍 Backend URL: http://localhost:3001
 🔗 Available routes:
    - GET  /health
@@ -110,7 +110,7 @@ When server starts successfully, you should see:
 ```bash
 curl http://localhost:3001/health
 ```
-Expected: `{"status":"ok","message":"Satark AI Backend is running"}`
+Expected: `{"status":"ok","message":"NEXTCOMPLY AI Backend is running"}`
 
 ### Test 2: Auth Health
 ```bash
@@ -165,3 +165,4 @@ Expected: `{"error":"Email and password are required."}` (400 status, NOT 404)
 ## Status: ✅ READY
 
 All routes are properly configured and ready to use. Restart the server to see the debug logs and verify routes are working.
+

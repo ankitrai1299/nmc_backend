@@ -12,22 +12,61 @@ const cleanJsonString = (text = "") => {
     .trim();
 };
 
+const extractJsonCandidate = (text = "") => {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    return text.trim();
+  }
+  return text.slice(start, end + 1).trim();
+};
+
+const tryParseJson = (text) => {
+  const cleaned = cleanJsonString(text);
+  const candidate = extractJsonCandidate(cleaned);
+  return JSON.parse(candidate);
+};
+
 /* ===============================
    PROMPT (VERY IMPORTANT)
 ================================ */
-const buildCompliancePrompt = ({ inputType, category, analysisMode }) => {
+const buildRulesBlock = (rules = []) => {
+  if (!rules.length) {
+    return 'No rule pack provided. Use best-effort compliance reasoning based on jurisdiction.';
+  }
+
+  const maxRules = 50;
+  const lines = rules.slice(0, maxRules).map((rule, index) => {
+    const section = rule.section ? ` (Section: ${rule.section})` : '';
+    return `${index + 1}. ${rule.regulation} - ${rule.title}${section}`;
+  });
+
+  if (rules.length > maxRules) {
+    lines.push(`...and ${rules.length - maxRules} more rules in this jurisdiction.`);
+  }
+
+  return lines.join('\n');
+};
+
+const buildCompliancePrompt = ({ inputType, category, analysisMode, country, region, rules, contentContext }) => {
+  const jurisdiction = country ? country : 'India';
+  const regionLabel = region ? ` (${region})` : '';
+  const rulesBlock = buildRulesBlock(rules);
+  const contextBlock = contentContext
+    ? `\nCONTENT CONTEXT (MANDATORY):\n${contentContext}\n`
+    : '';
+
   return `
-You are Satark AI, a senior Indian regulatory compliance auditor.
+You are NextComply AI, a senior regulatory compliance auditor for ${jurisdiction}${regionLabel}.
 
 TASK:
-Audit the given ${inputType} content for Indian advertising & healthcare compliance.
+Audit the given ${inputType} content for ${jurisdiction}${regionLabel} advertising & healthcare compliance.
 
-REGULATIONS:
-- Drugs and Magic Remedies Act, 1954 (Schedule J)
-- ASCI Code & Healthcare Guidelines 2024
-- Consumer Protection Act 2019
-- UCPMP 2024
-- IRDAI Advertising Norms (if applicable)
+${contextBlock}
+
+RULE PACK (MANDATORY):
+Use ONLY the rules listed below to identify violations and generate fixes.
+${rulesBlock}
 
 CRITICAL OUTPUT RULES:
 - Return ONLY valid JSON
@@ -77,6 +116,7 @@ JSON SCHEMA:
 }
 
 ANALYSIS MODE: ${analysisMode || "Standard"}
+INDUSTRY DOMAIN: ${category || "General"}
 
 Return JSON only.`;
 };
@@ -89,6 +129,10 @@ export const analyzeWithGemini = async ({
   inputType = "text",
   category = "General",
   analysisMode = "Standard",
+  country,
+  region,
+  rules = [],
+  contentContext = ''
 }) => {
   if (!process.env.VERTEX_AI_PROJECT_ID) {
     throw new Error("VERTEX_AI_PROJECT_ID missing");
@@ -112,6 +156,10 @@ export const analyzeWithGemini = async ({
     inputType,
     category,
     analysisMode,
+    country,
+    region,
+    rules,
+    contentContext
   });
 
   const parts = [
@@ -130,13 +178,30 @@ export const analyzeWithGemini = async ({
     throw new Error("Gemini returned empty response");
   }
 
-  const cleaned = cleanJsonString(rawText);
-
   try {
-    return JSON.parse(cleaned);
+    return tryParseJson(rawText);
   } catch (err) {
-    console.error("❌ RAW GEMINI OUTPUT:\n", cleaned);
-    throw new Error("Gemini returned incomplete or invalid JSON");
+    console.error("❌ RAW GEMINI OUTPUT:\n", cleanJsonString(rawText));
+
+    // One repair attempt: ask Gemini to fix JSON only
+    const repairPrompt = `Fix and return ONLY valid JSON for this response. Do not add explanations.\n\nRAW RESPONSE:\n${rawText}`;
+    const repairResult = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: repairPrompt }] }],
+    });
+
+    const repairText =
+      repairResult?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    if (!repairText) {
+      throw new Error("Gemini returned incomplete or invalid JSON");
+    }
+
+    try {
+      return tryParseJson(repairText);
+    } catch (repairError) {
+      console.error("❌ RAW GEMINI REPAIR OUTPUT:\n", cleanJsonString(repairText));
+      throw new Error("Gemini returned incomplete or invalid JSON");
+    }
   }
 };
 
@@ -165,4 +230,50 @@ export const generateAudioSummary = async (text) => {
   }
 
   return audioBase64;
+};
+
+export const extractClaimsWithGemini = async (text) => {
+  if (!process.env.VERTEX_AI_PROJECT_ID) {
+    throw new Error('VERTEX_AI_PROJECT_ID missing');
+  }
+
+  const cleaned = (text || '').trim();
+  if (!cleaned) {
+    throw new Error('No text provided for claim extraction');
+  }
+
+  const vertexAI = new VertexAI({
+    project: process.env.VERTEX_AI_PROJECT_ID,
+    location: process.env.VERTEX_AI_LOCATION || 'asia-southeast1'
+  });
+
+  const model = vertexAI.getGenerativeModel({
+    model: MODEL_NAME,
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 2048,
+      topP: 0.9
+    }
+  });
+
+  const prompt = `Extract the key marketing, medical, and compliance-relevant claims from the following document text. Return plain text only. Do NOT include JSON or markdown. If no claims are present, return a short sentence stating that no explicit claims were found.`;
+
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: `${prompt}\n\n${cleaned.substring(0, 16000)}` }] }]
+  });
+
+  const output = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const extracted = output.trim();
+
+  if (!extracted) {
+    throw new Error('Gemini claim extraction returned empty output');
+  }
+
+  const lower = extracted.toLowerCase();
+  const isNoClaims = lower.includes('no explicit claims') || lower.includes('no clear claims');
+  if (!isNoClaims && extracted.length < 80) {
+    throw new Error('Gemini claim extraction returned too-short output');
+  }
+
+  return extracted;
 };

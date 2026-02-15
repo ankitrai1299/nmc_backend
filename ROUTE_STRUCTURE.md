@@ -91,5 +91,6 @@ curl -X POST http://localhost:3001/api/auth/login \
      - GET  /api/auth/health
      - POST /api/auth/signup
      - POST /api/auth/login
-🚀 Satark AI Backend server running on port 3001
+🚀 NEXTCOMPLY AI Backend server running on port 3001
 ```
+

@@ -14,7 +14,7 @@ The backend uses a **dual AI pipeline** with strict separation between OpenAI an
 
 ```env
 # OpenAI - For transcription ONLY
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 
 # Gemini/Vertex AI - For compliance analysis ONLY
 GOOGLE_VERTEX_PROJECT=your-project-id
@@ -217,7 +217,7 @@ curl -X POST http://localhost:3001/api/analyze \
 ## Troubleshooting
 
 ### "OPENAI_API_KEY is not set"
-- Add `OPENAI_API_KEY=sk-...` to `.env`
+- Add `OPENAI_API_KEY=YOUR_OPENAI_API_KEY` to `.env`
 - Required for audio/video transcription
 
 ### "GOOGLE_VERTEX_PROJECT is not set"
@@ -227,3 +227,4 @@ curl -X POST http://localhost:3001/api/analyze \
 ### "API keys must be different"
 - Ensure OpenAI and Gemini keys are different
 - Never reuse keys between services
+

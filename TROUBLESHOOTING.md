@@ -16,7 +16,7 @@ npm start
 
 You should see output like:
 ```
-🚀 Satark AI Compliance Auditor Backend
+🚀 NEXTCOMPLY AI Compliance Auditor Backend
 ==========================================
 📍 Server running on port 3001
 ```
@@ -80,7 +80,7 @@ Once the server starts, test it:
 curl http://localhost:3001/health
 
 # Should return:
-# {"status":"ok","message":"Satark AI Compliance Auditor Backend is running"}
+# {"status":"ok","message":"NEXTCOMPLY AI Compliance Auditor Backend is running"}
 ```
 
 ## Common Errors
@@ -128,3 +128,4 @@ Both endpoints work the same way, but return slightly different response formats
 3. Ensure MongoDB is accessible
 4. Check that Node.js version is 18 or higher
 5. Try restarting the server
+

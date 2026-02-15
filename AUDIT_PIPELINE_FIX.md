@@ -152,3 +152,4 @@ if (transcriptText.length < 50) {
 3. **Accuracy**: Fail-safe ensures no violations are missed
 4. **Debugging**: Easy to trace transcript through pipeline
 5. **Error Prevention**: Validates transcript before expensive Gemini calls
+

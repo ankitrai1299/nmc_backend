@@ -1,5 +1,7 @@
 import chromium from '@sparticuz/chromium';
+import fs from 'fs';
 import { Readability } from '@mozilla/readability';
+import Mercury from '@postlight/mercury-parser';
 import { JSDOM } from 'jsdom';
 import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
@@ -14,6 +16,8 @@ const puppeteer = puppeteerExtra.addExtra(puppeteerCore);
  */
 
 const MAX_CONTENT_LENGTH = 50000; // Limit scraped content to 50KB
+const MIN_CONTENT_CHARS = 800;
+const MIN_CONTENT_WORDS = 120;
 const REQUEST_TIMEOUT = 60000; // 60 seconds
 const MAX_ATTEMPTS = 3;
 const USER_AGENTS = [
@@ -53,17 +57,139 @@ const sanitizeContent = (text) => {
   return sanitized;
 };
 
+const normalizeWhitespace = (text) => {
+  if (!text) return '';
+  return text
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+const isExecutableFile = (candidatePath) => {
+  if (!candidatePath) return false;
+  try {
+    const stat = fs.statSync(candidatePath);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+};
+
 const isBotBlocked = (text) => BOT_BLOCK_PATTERNS.some((pattern) => pattern.test(text));
+
+const logStructured = (event, details = {}) => {
+  console.log('[Scraping]', JSON.stringify({ event, ...details }));
+};
+
+const getLineStats = (text) => {
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const wordCounts = lines.map((line) => line.split(/\s+/).filter(Boolean).length);
+  return { lines, wordCounts };
+};
+
+const isHeadingHeavy = (text) => {
+  const { lines, wordCounts } = getLineStats(text);
+  if (!lines.length) return true;
+  const headingLike = lines.filter((line, index) => {
+    const words = wordCounts[index] || 0;
+    const isShort = words <= 6;
+    const isUpper = line.length >= 6 && line === line.toUpperCase();
+    const hasMarker = line.startsWith('#') || line.endsWith(':');
+    return isShort || isUpper || hasMarker;
+  });
+  return headingLike.length / lines.length >= 0.7;
+};
+
+const isContentTooShort = (text) => {
+  if (!text) return true;
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return text.length < MIN_CONTENT_CHARS || words < MIN_CONTENT_WORDS || isHeadingHeavy(text);
+};
+
+const cleanExtractedText = (text) => {
+  if (!text) return '';
+  const navTerms = [
+    'home',
+    'about',
+    'contact',
+    'privacy',
+    'terms',
+    'cookie',
+    'subscribe',
+    'newsletter',
+    'sign in',
+    'sign up',
+    'login',
+    'register',
+    'follow',
+    'share',
+    'advert',
+    'sponsored',
+    'related posts',
+    'comments'
+  ];
+
+  const seen = new Set();
+  const cleanedLines = text
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .filter((line) => {
+      const normalized = line.toLowerCase();
+      if (seen.has(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
+      if (line.length < 40 && navTerms.some((term) => normalized.includes(term))) {
+        return false;
+      }
+      if (line.length < 25 && normalized.match(/\b(menu|navigation|sidebar|footer|header)\b/)) {
+        return false;
+      }
+      return true;
+    });
+
+  return sanitizeContent(cleanedLines.join('\n'));
+};
 
 const extractReadableText = (html) => {
   try {
     const dom = new JSDOM(html, { url: 'https://example.com' });
     const article = new Readability(dom.window.document).parse();
     if (article?.textContent) {
-      return sanitizeContent(article.textContent);
+      return cleanExtractedText(article.textContent);
     }
   } catch (error) {
     console.warn('[Scraping] Readability parse failed:', error.message);
+  }
+  return '';
+};
+
+const extractFromHtmlContainers = (html) => {
+  try {
+    const dom = new JSDOM(html, { url: 'https://example.com' });
+    const document = dom.window.document;
+    const selectors = [
+      'article',
+      '.blog-content',
+      '.post-content',
+      '.entry-content',
+      '.article-content',
+      '.content',
+      '.main-content'
+    ];
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element?.textContent) {
+        return cleanExtractedText(element.textContent);
+      }
+    }
+  } catch (error) {
+    console.warn('[Scraping] Container extraction failed:', error.message);
   }
   return '';
 };
@@ -75,6 +201,163 @@ const extractMetadataText = (metadata) => {
   if (metadata?.ogTitle) parts.push(`OG Title: ${metadata.ogTitle}`);
   if (metadata?.ogDescription) parts.push(`OG Description: ${metadata.ogDescription}`);
   return sanitizeContent(parts.join(' '));
+};
+
+const fetchJinaReaderText = async (url) => {
+  const jinaUrl = `https://r.jina.ai/${url}`;
+  const response = await fetch(jinaUrl, {
+    headers: {
+      'User-Agent': getRandomUserAgent(),
+      'Accept': 'text/plain'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Jina Reader HTTP ${response.status}`);
+  }
+
+  const text = await response.text();
+  return cleanExtractedText(text);
+};
+
+const fetchJinaReaderRawText = async (url) => {
+  const jinaUrl = `https://r.jina.ai/${url}`;
+  const response = await fetch(jinaUrl, {
+    headers: {
+      'User-Agent': getRandomUserAgent(),
+      'Accept': 'text/plain'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Jina Reader HTTP ${response.status}`);
+  }
+
+  const text = await response.text();
+  return normalizeWhitespace(text);
+};
+
+const fetchMercuryText = async (url) => {
+  const result = await Mercury.parse(url, { fetchAllPages: false });
+  const raw = result?.content || result?.excerpt || '';
+  if (!raw) {
+    return '';
+  }
+  const dom = new JSDOM(raw, { url });
+  return cleanExtractedText(dom.window.document.body?.textContent || raw);
+};
+
+const fetchMercuryRawText = async (url) => {
+  const result = await Mercury.parse(url, { fetchAllPages: false });
+  const raw = result?.content || result?.excerpt || '';
+  if (!raw) {
+    return '';
+  }
+  const dom = new JSDOM(raw, { url });
+  return normalizeWhitespace(dom.window.document.body?.textContent || raw);
+};
+
+const fetchPuppeteerArticleText = async (url) => {
+  console.log('[Puppeteer + Readability] Extracting article from:', url);
+  
+  const { path: resolvedExecutablePath, isChromium } = await resolveExecutablePath();
+  if (!resolvedExecutablePath) {
+    throw new Error('No Chromium/Chrome executable found for Puppeteer. Set PUPPETEER_EXECUTABLE_PATH to chrome.exe or msedge.exe');
+  }
+
+  const userAgent = getRandomUserAgent();
+  const browser = await puppeteer.launch({
+    args: isChromium ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
+    executablePath: resolvedExecutablePath || undefined,
+    headless: isChromium ? chromium.headless : 'new'
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent(userAgent);
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    });
+    await page.setViewport({ width: 1366, height: 768 });
+    page.setDefaultNavigationTimeout(REQUEST_TIMEOUT);
+
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: REQUEST_TIMEOUT });
+    await page.waitForSelector('body', { timeout: 15000 });
+    await sleep(1200);
+
+    // Get full page HTML after rendering
+    const pageHtml = await page.content();
+
+    // Use Mozilla Readability to extract main article content
+    const dom = new JSDOM(pageHtml, { url });
+    const reader = new Readability(dom.window.document);
+    const article = reader.parse();
+
+    // Extract text from Readability article
+    const rawText = article?.textContent ?? '';
+    
+    if (!rawText.trim()) {
+      throw new Error('Readability extracted empty content from page');
+    }
+
+    return normalizeWhitespace(rawText);
+  } finally {
+    await browser.close().catch(() => {});
+  }
+};
+
+export const extractBlogContentByMethod = async (url, method) => {
+  if (method === 'jina_reader') {
+    const text = await fetchJinaReaderRawText(url);
+    if (!text.trim()) throw new Error('Jina Reader returned empty content');
+    return { extractedText: text, extractionMethod: method };
+  }
+
+  if (method === 'mercury') {
+    const text = await fetchMercuryRawText(url);
+    if (!text.trim()) throw new Error('Mercury Parser returned empty content');
+    return { extractedText: text, extractionMethod: method };
+  }
+
+  if (method === 'puppeteer') {
+    const text = await fetchPuppeteerArticleText(url);
+    if (!text.trim()) throw new Error('Puppeteer returned empty content');
+    return { extractedText: text, extractionMethod: method };
+  }
+
+  throw new Error(`Unsupported extraction method: ${method}`);
+};
+
+const resolveExecutablePath = async () => {
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (envPath && isExecutableFile(envPath)) {
+    return { path: envPath, isChromium: false };
+  }
+
+  if (process.platform === 'win32') {
+    const windowsCandidates = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
+    ];
+    for (const candidate of windowsCandidates) {
+      if (isExecutableFile(candidate)) {
+        return { path: candidate, isChromium: false };
+      }
+    }
+
+    // @sparticuz/chromium is not supported on Windows in most environments.
+    return { path: null, isChromium: false };
+  }
+
+  const chromiumPath = await chromium.executablePath();
+  if (chromiumPath && isExecutableFile(chromiumPath)) {
+    return { path: chromiumPath, isChromium: true };
+  }
+
+  return { path: null, isChromium: false };
 };
 
 const fetchHtml = async (url) => {
@@ -155,21 +438,60 @@ export const scrapeUrl = async (url) => {
 
   let lastError;
 
+  try {
+    const jinaText = await fetchJinaReaderText(url);
+    if (jinaText && !isContentTooShort(jinaText)) {
+      logStructured('jina_reader', { status: 'success', length: jinaText.length });
+      return { extractedText: jinaText, url };
+    }
+    if (jinaText) {
+      logStructured('jina_reader', { status: 'short', length: jinaText.length });
+    }
+  } catch (error) {
+    logStructured('jina_reader', { status: 'error', message: error.message });
+  }
+
+  try {
+    const mercuryText = await fetchMercuryText(url);
+    if (mercuryText && !isContentTooShort(mercuryText)) {
+      logStructured('mercury_parser', { status: 'success', length: mercuryText.length });
+      return { extractedText: mercuryText, url };
+    }
+    if (mercuryText) {
+      logStructured('mercury_parser', { status: 'short', length: mercuryText.length });
+    }
+  } catch (error) {
+    logStructured('mercury_parser', { status: 'error', message: error.message });
+  }
+
+  const { path: resolvedExecutablePath, isChromium } = await resolveExecutablePath();
+  const canLaunchBrowser = !!resolvedExecutablePath;
+
+  if (!canLaunchBrowser) {
+    logStructured('browser_fallback', { status: 'unavailable' });
+    const readable = await extractReadableFromUrl(url);
+    if (readable) {
+      return { extractedText: readable, url };
+    }
+    const metadata = await extractMetadataFromUrl(url);
+    if (metadata) {
+      return { extractedText: metadata, url };
+    }
+    throw new Error('Failed to scrape URL: no browser available for dynamic pages');
+  }
+
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const userAgent = getRandomUserAgent();
     let browser;
 
     try {
       await delay();
-      console.log(`[Scraping] Attempt ${attempt}/${MAX_ATTEMPTS} | URL: ${url}`);
-
-      const executablePath = await chromium.executablePath();
-      const resolvedExecutablePath = executablePath || process.env.PUPPETEER_EXECUTABLE_PATH;
+      logStructured('browser_attempt', { attempt, maxAttempts: MAX_ATTEMPTS, url });
 
       browser = await puppeteer.launch({
-        args: resolvedExecutablePath ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
+        args: isChromium ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
         executablePath: resolvedExecutablePath || undefined,
-        headless: resolvedExecutablePath ? chromium.headless : 'new'
+        headless: isChromium ? chromium.headless : 'new'
       });
 
       const page = await browser.newPage();
@@ -227,18 +549,53 @@ export const scrapeUrl = async (url) => {
       await sleep(1500);
 
       const rawText = await page.evaluate(() => {
-        const elements = document.querySelectorAll('script, style, noscript');
-        elements.forEach((el) => el.remove());
+        const selectorsToRemove = [
+          'script',
+          'style',
+          'noscript',
+          'nav',
+          'header',
+          'footer',
+          'aside',
+          '.sidebar',
+          '.nav',
+          '.menu',
+          '.advert',
+          '.ad',
+          '.ads',
+          '.sponsored',
+          '.newsletter',
+          '.cookie',
+          '.banner'
+        ];
+        document.querySelectorAll(selectorsToRemove.join(',')).forEach((el) => el.remove());
+
+        const containers = [
+          'article',
+          '.blog-content',
+          '.post-content',
+          '.entry-content',
+          '.article-content',
+          '.content',
+          '.main-content'
+        ];
+        for (const selector of containers) {
+          const element = document.querySelector(selector);
+          if (element?.innerText) {
+            return element.innerText;
+          }
+        }
+
         return document.body ? document.body.innerText : '';
       });
 
-      const extractedText = sanitizeContent(rawText);
+      const extractedText = cleanExtractedText(rawText);
 
       if (!extractedText.trim()) {
         const html = await page.content();
-        const readableText = extractReadableText(html);
+        const readableText = extractReadableText(html) || extractFromHtmlContainers(html);
         if (readableText) {
-          console.log('[Scraping] Readability fallback succeeded.');
+          logStructured('readability_fallback', { status: 'success', length: readableText.length });
           return { extractedText: readableText, url };
         }
         const metadata = await page.evaluate(() => ({
@@ -264,7 +621,7 @@ export const scrapeUrl = async (url) => {
         throw new Error('CAPTCHA or bot protection detected');
       }
 
-      console.log(`[Scraping] Success | Extracted ${extractedText.length} characters`);
+      logStructured('browser_extract', { status: 'success', length: extractedText.length });
 
       return {
         extractedText,

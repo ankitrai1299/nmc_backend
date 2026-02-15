@@ -78,7 +78,7 @@
 
 ### Required for Transcription
 ```env
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 ```
 
 ### Required for Compliance Analysis
@@ -149,3 +149,4 @@ curl -X POST http://localhost:3001/api/analyze \
 3. Test transcription with audio file
 4. Test compliance analysis with text
 5. Test full pipeline with video file
+

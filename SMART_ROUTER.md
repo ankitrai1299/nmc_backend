@@ -154,7 +154,7 @@ All errors return structured JSON:
 
 ```env
 # OpenAI - For transcription only
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 
 # Gemini/Vertex AI - For compliance analysis
 GOOGLE_VERTEX_PROJECT=your-project-id
@@ -228,3 +228,4 @@ curl -X POST http://localhost:3001/api/audit \
   -F "file=@image.jpg" \
   -F "inputType=Image"
 ```
+

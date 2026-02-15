@@ -6,7 +6,7 @@ import { processContent } from '../services/contentProcessor.js';
  */
 export const analyzeCompatibility = async (req, res) => {
   try {
-    const { content, inputType, category, analysisMode } = req.body;
+    const { content, inputType, category, analysisMode, country, region } = req.body;
     const file = req.file;
     
     // Validate input
@@ -33,7 +33,9 @@ export const analyzeCompatibility = async (req, res) => {
     const auditResult = await processContent(input, {
       userId: req.user?.id,
       category,
-      analysisMode
+      analysisMode,
+      country,
+      region
     });
 
     return res.json(auditResult);

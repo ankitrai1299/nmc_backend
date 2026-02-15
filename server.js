@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { connectDB } from './config/database.js';
 import auditRoutes from './routes/auditRoutes.js';
+import rulesRoutes from './routes/rulesRoutes.js';
+import urlAuditRoutes from './routes/urlAudit.route.ts';
 
 // Import auth routes
 console.log('[Server] Importing auth routes...');
@@ -39,9 +41,12 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 const allowedOrigins = new Set([
+  'https://nextcomplyai.com',
+  'https://www.nextcomplyai.com',
   'https://www.nextdoc.in',
   'https://nextdoc.in',
-  'http://localhost:3000'
+  'http://localhost:3000',
+  'http://localhost:5173'
 ]);
 
 if (process.env.FRONTEND_URL) {
@@ -72,7 +77,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Satark AI Backend is running' });
+  res.json({ status: 'ok', message: 'NextComply AI Backend is running' });
 });
 
 // Auth routes - must be registered before error handlers
@@ -96,6 +101,8 @@ try {
 }
 
 app.use('/api', auditRoutes);
+app.use('/api', rulesRoutes);
+app.use('/api', urlAuditRoutes);
 
 // 404 handler for undefined routes
 app.use((req, res, next) => {
@@ -127,7 +134,7 @@ app.use((err, req, res, next) => {
     }
 
     app.listen(PORT, () => {
-      console.log(`🚀 Satark AI Backend server running on port ${PORT}`);
+      console.log(`🚀 NextComply AI Backend server running on port ${PORT}`);
       console.log(`📍 Backend URL: http://localhost:${PORT}`);
       console.log(`📍 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
       console.log(`☁️  Vertex AI Project: ${process.env.VERTEX_AI_PROJECT_ID || '✗ Missing'}`);

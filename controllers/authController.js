@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 
 const getJwtSecret = () => {
@@ -14,6 +15,13 @@ const createToken = (user) => {
 
 export const signup = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Authentication service is unavailable. Database connection is not ready.'
+      });
+    }
+
     const { name, email, password } = req.body;
     console.log('[Auth] Signup request received:', { email, name });
 
@@ -73,6 +81,13 @@ export const signup = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Authentication service is unavailable. Database connection is not ready.'
+      });
+    }
+
     const { email, password } = req.body;
     console.log('[Auth] Login request received:', req.body.email || 'no email provided');
 

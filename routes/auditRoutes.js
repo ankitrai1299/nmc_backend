@@ -27,7 +27,10 @@ const upload = multer({
       'audio/ogg',
       'video/mp4',
       'video/webm',
-      'video/quicktime'
+      'video/quicktime',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'application/pdf'
     ];
     
     // Check if file mimetype matches any allowed type
