@@ -4,7 +4,7 @@ import { VertexAI } from "@google-cloud/vertexai";
    CONFIG
 ================================ */
 const MODEL_NAME = "gemini-2.5-flash";
-const MAX_CONTENT_LENGTH = 10000;
+const MAX_CONTENT_LENGTH = 12000;
 const GEMINI_TIMEOUT_MS = 30000;
 
 let vertexAIClient = null;
@@ -26,8 +26,8 @@ const getVertexAIClient = () => {
 
 const truncateContent = (content) => {
   if (!content || typeof content !== 'string') return '';
-  return content.length > MAX_CONTENT_LENGTH 
-    ? content.substring(0, MAX_CONTENT_LENGTH) 
+  return content.length > MAX_CONTENT_LENGTH
+    ? content.substring(0, MAX_CONTENT_LENGTH)
     : content;
 };
 
@@ -107,27 +107,15 @@ const extractBalancedJson = (text = "") => {
 };
 
 const tryParseJson = (text) => {
+  // Extract substring between first { and last }
   const cleaned = cleanJsonString(text);
-  const candidates = [
-    cleaned,
-    extractJsonCandidate(cleaned),
-    extractBalancedJson(cleaned)
-  ];
-
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      try {
-        return JSON.parse(removeTrailingCommas(candidate));
-      } catch {
-        // Try next candidate.
-      }
-    }
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('Invalid JSON');
   }
-
-  throw new Error('Invalid JSON');
+  const jsonStr = cleaned.slice(start, end + 1);
+  return JSON.parse(jsonStr);
 };
 
 /* ===============================
