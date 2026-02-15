@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 import { connectDB } from './config/database.js';
 import auditRoutes from './routes/auditRoutes.js';
 import rulesRoutes from './routes/rulesRoutes.js';
@@ -13,7 +15,34 @@ console.log('[Server] Auth routes imported:', authRoutes ? '✅' : '❌');
 
 // Load environment variables
 dotenv.config();
-console.log("Vertex using env credentials:", !!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+
+// Setup Google Application Credentials from JSON env var
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  console.log('[Server] Setting up Google Application Credentials from JSON env var...');
+  try {
+    const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+    console.log('[Server] Raw credentials length:', rawCredentials?.length);
+    
+    const credentials = JSON.parse(rawCredentials);
+    console.log('[Server] Parsed credentials project_id:', credentials.project_id);
+    console.log('[Server] Parsed credentials client_email:', credentials.client_email);
+    
+    // Create temp file path
+    const tempPath = path.join(process.cwd(), 'service-account.json');
+    console.log('[Server] Writing credentials to temp file:', tempPath);
+    
+    // Write JSON to file
+    fs.writeFileSync(tempPath, JSON.stringify(credentials, null, 2));
+    console.log('[Server] ✓ Temp credentials file created');
+    
+    // Set environment variable for Google SDKs
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = tempPath;
+    console.log('[Server] ✓ GOOGLE_APPLICATION_CREDENTIALS set to:', tempPath);
+  } catch (error) {
+    console.error('[Server] ❌ Failed to setup credentials:', error.message);
+    throw error;
+  }
+}
 
 // Validate required environment variables
 const projectId = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID || process.env.GOOGLE_VERTEX_PROJECT;

@@ -1,36 +1,9 @@
 import { VertexAI } from "@google-cloud/vertexai";
-import { GoogleAuth } from "google-auth-library";
 
 /* ===============================
    CONFIG
 ================================ */
 const MODEL_NAME = "gemini-2.5-flash";
-
-const getVertexAuth = () => {
-  const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-  console.log('[Gemini Service] Raw credentials length:', rawCredentials?.length);
-  
-  if (!rawCredentials) {
-    throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON is not set");
-  }
-  let credentials;
-  try {
-    credentials = JSON.parse(rawCredentials);
-    console.log('[Gemini Service] Parsed credentials project_id:', credentials.project_id);
-    console.log('[Gemini Service] Parsed credentials client_email:', credentials.client_email);
-  } catch (error) {
-    console.error('[Gemini Service] JSON parse error:', error.message);
-    throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON");
-  }
-
-  const auth = new GoogleAuth({
-    credentials,
-    scopes: ["https://www.googleapis.com/auth/cloud-platform"]
-  });
-  console.log('[Gemini Service] GoogleAuth client created successfully');
-  
-  return auth;
-};
 
 const cleanJsonString = (text = "") => {
   return text
@@ -174,14 +147,12 @@ export const analyzeWithGemini = async ({
   if (!location) {
     throw new Error("VERTEX_LOCATION missing");
   }
-  const auth = getVertexAuth();
 
   const vertexAI = new VertexAI({
     project: projectId,
-    location: location,
-    auth
+    location: location
   });
-  console.log("[Gemini Service - analyzeWithGemini] ✓ Vertex initialized with explicit auth credentials");
+  console.log("[Gemini Service - analyzeWithGemini] ✓ Vertex initialized (using GOOGLE_APPLICATION_CREDENTIALS)");
 
   const model = vertexAI.getGenerativeModel({
     model: MODEL_NAME,
@@ -249,7 +220,6 @@ export const analyzeWithGemini = async ({
    OPTIONAL: AUDIO SUMMARY
 ================================ */
 export const generateAudioSummary = async (text) => {
-  const auth = getVertexAuth();
   const projectId = process.env.VERTEX_PROJECT_ID;
   const location = process.env.VERTEX_LOCATION;
   
@@ -265,10 +235,9 @@ export const generateAudioSummary = async (text) => {
   }
   const vertexAI = new VertexAI({
     project: projectId,
-    location: location,
-    auth
+    location: location
   });
-  console.log("[Gemini Service - generateAudioSummary] ✓ Vertex initialized with explicit auth credentials");
+  console.log("[Gemini Service - generateAudioSummary] ✓ Vertex initialized (using GOOGLE_APPLICATION_CREDENTIALS)");
 
   const ttsModel = vertexAI.getGenerativeModel({
     model: "gemini-2.5-flash-preview-tts",
@@ -302,7 +271,6 @@ export const extractClaimsWithGemini = async (text) => {
   if (!location) {
     throw new Error('VERTEX_LOCATION missing');
   }
-  const auth = getVertexAuth();
 
   const cleaned = (text || '').trim();
   if (!cleaned) {
@@ -311,10 +279,9 @@ export const extractClaimsWithGemini = async (text) => {
 
   const vertexAI = new VertexAI({
     project: projectId,
-    location: location,
-    auth
+    location: location
   });
-  console.log("[Gemini Service - extractClaimsWithGemini] ✓ Vertex initialized with explicit auth credentials");
+  console.log("[Gemini Service - extractClaimsWithGemini] ✓ Vertex initialized (using GOOGLE_APPLICATION_CREDENTIALS)");
 
   const model = vertexAI.getGenerativeModel({
     model: MODEL_NAME,

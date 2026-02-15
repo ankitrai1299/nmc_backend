@@ -1,17 +1,46 @@
 #!/usr/bin/env node
 
 import dotenv from 'dotenv';
-import { GoogleAuth } from 'google-auth-library';
+import fs from 'fs';
+import path from 'path';
 
 // Load environment variables
 dotenv.config();
+
+// Setup credentials temp file (same as server.js)
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  console.log('[Test] Setting up Google Application Credentials from JSON env var...');
+  try {
+    const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+    console.log('[Test] Raw credentials length:', rawCredentials?.length);
+    
+    const credentials = JSON.parse(rawCredentials);
+    console.log('[Test] Parsed credentials project_id:', credentials.project_id);
+    console.log('[Test] Parsed credentials client_email:', credentials.client_email);
+    
+    // Create temp file path
+    const tempPath = path.join(process.cwd(), 'service-account.json');
+    console.log('[Test] Writing credentials to temp file:', tempPath);
+    
+    // Write JSON to file
+    fs.writeFileSync(tempPath, JSON.stringify(credentials, null, 2));
+    console.log('[Test] ✓ Temp credentials file created');
+    
+    // Set environment variable for Google SDKs
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = tempPath;
+    console.log('[Test] ✓ GOOGLE_APPLICATION_CREDENTIALS set to:', tempPath);
+  } catch (error) {
+    console.error('[Test] ❌ Failed to setup credentials:', error.message);
+    throw error;
+  }
+}
 
 console.log('[Test] Environment Variables:');
 console.log('  VERTEX_PROJECT_ID:', process.env.VERTEX_PROJECT_ID);
 console.log('  VERTEX_AI_PROJECT_ID:', process.env.VERTEX_AI_PROJECT_ID);
 console.log('  VERTEX_LOCATION:', process.env.VERTEX_LOCATION);
 console.log('  VERTEX_AI_LOCATION:', process.env.VERTEX_AI_LOCATION);
-console.log('  GOOGLE_APPLICATION_CREDENTIALS_JSON:', process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ? '[set]' : undefined);
+console.log('  GOOGLE_APPLICATION_CREDENTIALS:', process.env.GOOGLE_APPLICATION_CREDENTIALS);
 
 console.log('\n[Test] Testing Vertex AI SDK...');
 
@@ -21,29 +50,12 @@ try {
   console.log('[Test] ✓ VertexAI imported successfully');
   
   console.log('[Test] Initializing VertexAI...');
-  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
-  }
-
-  const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-  console.log('[Test] Raw credentials length:', rawCredentials?.length);
-  
-  const credentials = JSON.parse(rawCredentials);
-  console.log('[Test] Parsed credentials project_id:', credentials.project_id);
-  console.log('[Test] Parsed credentials client_email:', credentials.client_email);
-  
-  const auth = new GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/cloud-platform']
-  });
-  console.log('[Test] GoogleAuth client created successfully');
   
   const vertexAI = new VertexAI({
     project: process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID,
-    location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'asia-southeast1',
-    auth
+    location: process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || 'asia-southeast1'
   });
-  console.log('[Test] ✓ VertexAI initialized with explicit auth');
+  console.log('[Test] ✓ VertexAI initialized (using GOOGLE_APPLICATION_CREDENTIALS)');
   
   console.log('[Test] Getting generative model...');
   const model = vertexAI.getGenerativeModel({

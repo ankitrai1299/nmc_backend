@@ -1,5 +1,4 @@
 import { VertexAI } from '@google-cloud/vertexai';
-import { GoogleAuth } from 'google-auth-library';
 import { cleanArticleContent } from './contentCleaner.ts';
 import { detectContentMetadata } from './metadataDetector.ts';
 import { enforceContentLossGuard, validateExtractedContent } from './contentValidator.ts';
@@ -9,32 +8,6 @@ import type { ValidationResult } from './contentValidator.ts';
 const TRANSLATION_MODEL = 'gemini-2.5-flash';
 
 let translationClient: VertexAI | null = null;
-
-const getVertexAuth = () => {
-  const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-  console.log('[Audit Input Builder] Raw credentials length:', rawCredentials?.length);
-  
-  if (!rawCredentials) {
-    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
-  }
-  let credentials;
-  try {
-    credentials = JSON.parse(rawCredentials);
-    console.log('[Audit Input Builder] Parsed credentials project_id:', credentials.project_id);
-    console.log('[Audit Input Builder] Parsed credentials client_email:', credentials.client_email);
-  } catch (error) {
-    console.error('[Audit Input Builder] JSON parse error:', error.message);
-    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON');
-  }
-
-  const auth = new GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/cloud-platform']
-  });
-  console.log('[Audit Input Builder] GoogleAuth client created successfully');
-  
-  return auth;
-};
 
 const getTranslationClient = () => {
   if (!translationClient) {
@@ -48,14 +21,13 @@ const getTranslationClient = () => {
     if (!projectId) {
       throw new Error('VERTEX_AI_PROJECT_ID missing for translation');
     }
-    const auth = getVertexAuth();
+    
     translationClient = new VertexAI({
       project: projectId,
-      location: location,
-      auth
+      location: location
     });
     
-    console.log('[Audit Input Builder] ✓ Translation client initialized with explicit auth');
+    console.log('[Audit Input Builder] ✓ Translation client initialized (using GOOGLE_APPLICATION_CREDENTIALS)');
   }
   return translationClient;
 };

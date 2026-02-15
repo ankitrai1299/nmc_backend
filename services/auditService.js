@@ -1,5 +1,4 @@
 import { VertexAI } from '@google-cloud/vertexai';
-import { GoogleAuth } from 'google-auth-library';
 import { selectGeminiModel, getFallbackModel, getGenerationConfig, isComplexContent } from './modelRouter.js';
 import { extractClaims, shouldExtractClaims } from './claimsExtractor.js';
 
@@ -13,32 +12,6 @@ import { extractClaims, shouldExtractClaims } from './claimsExtractor.js';
 
 // Reuse AI client instances
 let vertexAIClient = null;
-
-const getVertexAuth = () => {
-  const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-  console.log('[Audit Service] Raw credentials length:', rawCredentials?.length);
-  
-  if (!rawCredentials) {
-    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not set');
-  }
-  let credentials;
-  try {
-    credentials = JSON.parse(rawCredentials);
-    console.log('[Audit Service] Parsed credentials project_id:', credentials.project_id);
-    console.log('[Audit Service] Parsed credentials client_email:', credentials.client_email);
-  } catch (error) {
-    console.error('[Audit Service] JSON parse error:', error.message);
-    throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON');
-  }
-
-  const auth = new GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/cloud-platform']
-  });
-  console.log('[Audit Service] GoogleAuth client created successfully');
-  
-  return auth;
-};
 
 /**
  * Get or create Vertex AI client instance
@@ -54,19 +27,16 @@ const getVertexAIClient = () => {
     console.log('[Audit Service] Project ID:', projectId);
     console.log('[Audit Service] Location:', location);
     
-    const auth = getVertexAuth();
-    
     if (!projectId) {
       throw new Error('GOOGLE_VERTEX_PROJECT or VERTEX_AI_PROJECT_ID is not set');
     }
     
     vertexAIClient = new VertexAI({ 
       project: projectId, 
-      location: location,
-      auth
+      location: location
     });
     
-    console.log('[Audit Service] ✓ Vertex AI client initialized with explicit auth | Model: gemini-2.0-flash');
+    console.log('[Audit Service] ✓ Vertex AI client initialized (using GOOGLE_APPLICATION_CREDENTIALS) | Model: gemini-2.0-flash');
   }
   
   return vertexAIClient;
