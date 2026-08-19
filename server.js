@@ -13,8 +13,9 @@ console.log('[Server] Importing auth routes...');
 import authRoutes from './routes/authRoutes.js';
 console.log('[Server] Auth routes imported:', authRoutes ? '✅' : '❌');
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from the project's configured env file.
+const envFilePath = path.join(process.cwd(), 'nextcomplyaibackkendversion2.env');
+dotenv.config({ path: fs.existsSync(envFilePath) ? envFilePath : undefined });
 
 // Setup Google Application Credentials from JSON env var
 if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {

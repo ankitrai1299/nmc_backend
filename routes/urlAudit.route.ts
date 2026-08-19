@@ -95,7 +95,7 @@ router.post('/url-audit', authMiddleware, async (req, res) => {
       throw new Error('Failed to extract content from URL');
     }
 
-    await processContent(
+    const auditResult = await processContent(
       { text: extractedText },
       {
         userId: req.user?.id,
@@ -109,7 +109,8 @@ router.post('/url-audit', authMiddleware, async (req, res) => {
     return res.json({
       source_url: normalizedUrl,
       content_type: type,
-      extracted_text: extractedText
+      extracted_text: extractedText,
+      audit: auditResult
     });
   } catch (error) {
     console.error('[URL Audit] Error:', error);

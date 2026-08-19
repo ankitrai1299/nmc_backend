@@ -5,7 +5,7 @@ import { VertexAI } from "@google-cloud/vertexai";
 ================================ */
 const MODEL_NAME = "gemini-2.5-flash";
 const MAX_CONTENT_LENGTH = 12000;
-const GEMINI_TIMEOUT_MS = 30000;
+const GEMINI_TIMEOUT_MS = 60000;
 
 let vertexAIClient = null;
 
@@ -232,9 +232,12 @@ export const analyzeWithGemini = async ({
     model: MODEL_NAME,
     generationConfig: {
       temperature: 0.0,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 8192,
       topP: 0.95,
-      responseMimeType: "application/json"
+      responseMimeType: "application/json",
+      // gemini-2.5-flash bills thinking tokens against maxOutputTokens.
+      // Thinking is disabled here so the whole budget goes to the JSON body.
+      thinkingConfig: { thinkingBudget: 0 }
     },
   });
 
@@ -269,7 +272,16 @@ export const analyzeWithGemini = async ({
   try {
     return tryParseJson(rawText);
   } catch (err) {
-    console.error('[Gemini] JSON parse failed');
+    const finishReason = result?.response?.candidates?.[0]?.finishReason;
+    console.error('[Gemini] JSON parse failed', {
+      finishReason,
+      usage: result?.response?.usageMetadata,
+      rawLength: rawText.length,
+      rawTail: rawText.slice(-200)
+    });
+    if (finishReason === 'MAX_TOKENS') {
+      throw new Error("Gemini response truncated (MAX_TOKENS) - increase maxOutputTokens");
+    }
     throw new Error("Gemini returned invalid JSON");
   }
 };
@@ -310,8 +322,9 @@ export const extractClaimsWithGemini = async (text) => {
     model: MODEL_NAME,
     generationConfig: {
       temperature: 0.0,
-      maxOutputTokens: 2048,
-      topP: 0.9
+      maxOutputTokens: 4096,
+      topP: 0.9,
+      thinkingConfig: { thinkingBudget: 0 }
     }
   });
 

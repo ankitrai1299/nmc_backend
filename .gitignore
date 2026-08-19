@@ -4,3 +4,10 @@ node_modules/
 *.log
 uploads/
 *.json
+
+# Secrets - any .env filename, not just ".env"
+*.env
+service-account.json
+
+# Scraper junk
+*player-script.js

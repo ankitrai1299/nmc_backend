@@ -34,7 +34,8 @@ const translateToEnglish = async (text: string, language: string) => {
     model: TRANSLATION_MODEL,
     generationConfig: {
       temperature: 0.0,
-      maxOutputTokens: 1500
+      maxOutputTokens: 4096,
+      thinkingConfig: { thinkingBudget: 0 }
     }
   });
 
